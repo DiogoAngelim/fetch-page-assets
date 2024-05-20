@@ -1,0 +1,51 @@
+{
+  "name": "fetch-page-assets",
+  "version": "1.0.5",
+  "type": "module",
+  "description": "A versatile Node.js module for extracting assets (such as CSS files, JavaScript files, and images) from HTML content or URLs.",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DiogoAngelim/fetch-page-assets.git"
+  },
+  "keywords": [
+    "asset",
+    "extractor",
+    "downloader",
+    "html",
+    "css",
+    "javascript",
+    "image",
+    "fetch",
+    "save"
+  ],
+  "author": "Diogo Angelim",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/DiogoAngelim/fetch-page-assets/issues"
+  },
+  "homepage": "https://github.com/DiogoAngelim/fetch-page-assets#readme",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "beautify": "^0.0.8",
+    "cheerio": "^1.0.0-rc.12",
+    "crypto": "^1.0.1",
+    "file-type": "^19.0.0",
+    "fs": "^0.0.1-security",
+    "html-entities": "^2.5.2",
+    "mime": "^4.0.3",
+    "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.5",
+    "@babel/preset-env": "^7.24.5",
+    "@babel/register": "^7.23.7",
+    "axios-mock-adapter": "^1.22.0",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0",
+    "mock-fs": "^5.2.0"
+  }
+}
