@@ -33,11 +33,15 @@ export default async function extractAssets(userInput, options = {}) {
       url = `${options.protocol}:${url}`;
     }
 
-    if (!url.endsWith('/')) {
-      url = `${url}/`;
+    return url;
+  }
+
+  function appendForwardSlash(userInput) {
+    if (!userInput.endsWith('/')) {
+      userInput = `${userInput}/`;
     }
 
-    return url;
+    return userInput;
   }
 
   function isUrlValid(url) {
@@ -127,11 +131,13 @@ export default async function extractAssets(userInput, options = {}) {
       return path.join(userInput, url);
     }
 
+    url = prependHttpProtocol(url);
+
     return url;
   }
 
-  function handleDuplicateSlashes() {
-    if (willFormDuplicateSlashes(parsedUrl)) {
+  function handleDuplicateSlashes(parsedUrl) {
+    if (willFormDuplicateSlashes(userInput, parsedUrl)) {
       userInput = userInput.slice(0, -1);
     }
   }
@@ -150,7 +156,7 @@ export default async function extractAssets(userInput, options = {}) {
     if (isUrl(parsedUrl)) {
       assetRemotePath = new URL(parsedUrl).pathname;
     } else if (isRelativeUrl(parsedUrl)) {
-      handleDuplicateSlashes();
+      handleDuplicateSlashes(parsedUrl);
       handleCssFileInput();
 
       assetRemotePath = path.join(userInput, parsedUrl);
@@ -249,9 +255,9 @@ export default async function extractAssets(userInput, options = {}) {
 
     while (retryAttempts < maxRetryAttempts) {
       try {
-        await getData(url, fileNameGuess, async (data, fileName) => {
+        await getData(url, fileNameGuess, (data, fileName) => {
           if (data) {
-            await callback(data, fileName);
+            callback(data, fileName);
 
             return;
           }
@@ -308,16 +314,16 @@ export default async function extractAssets(userInput, options = {}) {
     return ['EACCES', 'EISDIR'].includes(error.code);
   }
 
-  async function processCssFile(fileName, absoluteAssetUrl) {
+  function processCssFile(fileName, absoluteAssetUrl) {
     if (fileName.endsWith('.css')) {
-      await extractAssets(absoluteAssetUrl, {
+      extractAssets(absoluteAssetUrl, {
         basePath: options.basePath,
         saveFile: false,
       });
     }
   }
 
-  async function processMatches(matches) {
+  function processMatches(matches) {
     Promise.all(
       matches.map(async (parsedUrl) => {
         let absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
@@ -330,39 +336,36 @@ export default async function extractAssets(userInput, options = {}) {
         }
 
         try {
-          await parseFileNameFromUrl(
-            absoluteAssetUrl,
-            async (fileNameGuess) => {
-              try {
-                await downloadAssetWithRetry(
-                  absoluteAssetUrl,
-                  fileNameGuess,
-                  async (responseData, fileName) => {
-                    const destinationFilePath = formDestinationFilePath(
-                      destinationPath,
-                      fileName
-                    );
+          parseFileNameFromUrl(absoluteAssetUrl, async (fileNameGuess) => {
+            try {
+              downloadAssetWithRetry(
+                absoluteAssetUrl,
+                fileNameGuess,
+                async (responseData, fileName) => {
+                  const destinationFilePath = formDestinationFilePath(
+                    destinationPath,
+                    fileName
+                  );
 
-                    htmlString = replaceHtmlWithRelativeUrls(
-                      htmlString,
-                      absoluteAssetUrl,
-                      destinationPath,
-                      fileName
-                    );
+                  htmlString = replaceHtmlWithRelativeUrls(
+                    htmlString,
+                    absoluteAssetUrl,
+                    destinationPath,
+                    fileName
+                  );
 
-                    if (options.saveFile) {
-                      saveHtmlFile(htmlString);
-                    }
-
-                    await saveAsset(destinationFilePath, responseData);
-                    await processCssFile(fileName, absoluteAssetUrl);
+                  if (options.saveFile) {
+                    saveHtmlFile(htmlString);
                   }
-                );
-              } catch (error) {
-                logError(error.message);
-              }
+
+                  saveAsset(destinationFilePath, responseData);
+                  processCssFile(fileName, absoluteAssetUrl);
+                }
+              );
+            } catch (error) {
+              logError(error.message);
             }
-          );
+          });
         } catch (error) {
           if (isNetworkError(error)) {
             logError(
@@ -516,9 +519,11 @@ export default async function extractAssets(userInput, options = {}) {
 
   if (isUrl(userInput)) {
     if (isUrlValid(userInput)) {
-      try {
-        logProgress('Fetching content...');
+      userInput = appendForwardSlash;
 
+      logProgress('Fetching content...');
+
+      try {
         const { data } = await axios.get(userInput);
         htmlString = data;
 
@@ -541,10 +546,14 @@ export default async function extractAssets(userInput, options = {}) {
 
     const urls = parseUrls(htmlString);
 
-    await processMatches(urls);
+    processMatches(urls);
   } else {
     logError('Invalid HTML string.');
   }
 
   return htmlString;
 }
+
+extractAssets('https://valueci.com/', {
+  basePath: '/Users/diogoangelim/test4',
+});

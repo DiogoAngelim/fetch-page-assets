@@ -9,7 +9,7 @@ The extractAssets function extracts assets (such as images, fonts, stylesheets, 
 Ensure you have Node.js installed on your machine. Then, you can install the required dependencies using npm:
 
 ```bash
-cd /your/clone/directory && npm install
+npm install fetch-page-assets
 ```
 
 ### Usage
