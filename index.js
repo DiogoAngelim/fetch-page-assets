@@ -555,8 +555,3 @@ export default async function extractAssets(userInput, options = {}) {
 
   return htmlString;
 }
-
-extractAssets('https://valueci.com/', {
-  basePath: '/Users/diogoangelim/test4',
-  verbose: false,
-});
