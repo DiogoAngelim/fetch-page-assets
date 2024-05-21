@@ -5,23 +5,42 @@ import beautify from 'beautify';
 import { decode } from 'html-entities';
 import mime from 'mime';
 
-export default async function extractAssets(
-  userInput,
-  basePath = process.cwd(),
-  source = '',
-  saveFile = true
-) {
+export default async function extractAssets(userInput, options = {}) {
+  let {
+    basePath,
+    source,
+    saveFile,
+    protocol,
+    verbose,
+    parseCss,
+    maxRetryAttempts,
+    retryDelay,
+  } = options;
+
+  options = {
+    basePath: basePath || process.cwd(),
+    source: source || '',
+    saveFile: typeof saveFile !== 'undefined' ? saveFile : true,
+    protocol: protocol || 'https',
+    verbose: typeof verbose !== 'undefined' ? verbose : true,
+    parseCss: typeof parseCss !== 'undefined' ? parseCss : true,
+    maxRetryAttempts: maxRetryAttempts || 3,
+    retryDelay: retryDelay || 1000,
+  };
+
   function prependHttpProtocol(url) {
     if (url.startsWith('//')) {
-      return `https:${url}`;
+      url = `${options.protocol}:${url}`;
+    }
+
+    if (!url.endsWith('/')) {
+      url = `${url}/`;
     }
 
     return url;
   }
 
   function isUrlValid(url) {
-    url = prependHttpProtocol(url);
-
     try {
       let baseUrlWithoutQueryOrFragment = url.split('?')[0].split('#')[0];
 
@@ -84,7 +103,7 @@ export default async function extractAssets(
     }
 
     parts.shift();
-    parts = 'https://' + parts.join('/') + '/' + url[length - 1];
+    parts = `${options.protocol}://${parts.join('/')}/${url[length - 1]}`;
 
     return parts;
   }
@@ -101,6 +120,8 @@ export default async function extractAssets(
         userInput = userInput.replace(fileName, '');
 
         return formPathWithDots(userInput, url);
+      } else if (url.startsWith('./')) {
+        url = url.substring(2);
       }
 
       return path.join(userInput, url);
@@ -109,44 +130,59 @@ export default async function extractAssets(
     return url;
   }
 
-  function formDestinationPath(parsedUrl, basePath) {
-    let destinationPath;
+  function handleDuplicateSlashes() {
+    if (willFormDuplicateSlashes(parsedUrl)) {
+      userInput = userInput.slice(0, -1);
+    }
+  }
 
-    parsedUrl = prependHttpProtocol(parsedUrl);
+  function handleCssFileInput() {
+    if (path.extname(userInput).startsWith('.css')) {
+      const fileName = path.basename(userInput);
 
+      userInput = userInput.replace(fileName, '');
+    }
+  }
+
+  function getAssetRemotePath(parsedUrl) {
     let assetRemotePath = parsedUrl;
 
     if (isUrl(parsedUrl)) {
       assetRemotePath = new URL(parsedUrl).pathname;
     } else if (isRelativeUrl(parsedUrl)) {
-      if (willFormDuplicateSlashes(userInput, parsedUrl)) {
-        userInput = userInput.slice(0, -1);
-      }
-
-      if (path.extname(userInput).startsWith('.css')) {
-        const fileName = path.basename(userInput);
-
-        userInput = userInput.replace(fileName, '');
-      }
+      handleDuplicateSlashes();
+      handleCssFileInput();
 
       assetRemotePath = path.join(userInput, parsedUrl);
     }
 
-    destinationPath = path.join(basePath, assetRemotePath);
+    return assetRemotePath;
+  }
+
+  function formDestinationPath(parsedUrl) {
+    let destinationPath;
+
+    parsedUrl = prependHttpProtocol(parsedUrl);
+
+    const assetRemotePath = getAssetRemotePath(parsedUrl);
+
+    destinationPath = path.join(options.basePath, assetRemotePath);
     destinationPath = destinationPath.replace(/\/[^\/]*$/, '');
 
     return destinationPath;
   }
 
+  function directoryCreationCallback(error, destinationPath) {
+    if (error) {
+      logError(`Error creating directory ${destinationPath}: ${error.message}`);
+    } else {
+      logSuccess(`Directory created: ${destinationPath}`);
+    }
+  }
+
   async function mkdirRecursive(destinationPath) {
-    fs.mkdir(destinationPath, { recursive: true }, (error, result) => {
-      if (error) {
-        logError(
-          `Error creating directory ${destinationPath}: ${error.message}`
-        );
-      } else {
-        logSuccess(`Directory created: ${destinationPath}`);
-      }
+    fs.mkdir(destinationPath, { recursive: true }, (error) => {
+      directoryCreationCallback(error, destinationPath);
     });
   }
 
@@ -171,9 +207,9 @@ export default async function extractAssets(
     callback(fileName4);
   }
 
-  function saveHtmlFile(htmlString, basePath) {
+  function saveHtmlFile(htmlString) {
     fs.writeFileSync(
-      path.join(basePath, 'index.html'),
+      path.join(options.basePath, 'index.html'),
       beautify(htmlString, { format: 'html' }),
       'utf8'
     );
@@ -197,7 +233,10 @@ export default async function extractAssets(
     );
     const { origin } = new URL(parsedUrl);
     const localUrl = parsedUrl.replace(origin, '');
-    const relativePath = destinationFilePath.replace(`${basePath}/`, '');
+    const relativePath = destinationFilePath.replace(
+      `${options.basePath}/`,
+      ''
+    );
 
     htmlString = htmlString.replace(origin, '');
 
@@ -205,9 +244,8 @@ export default async function extractAssets(
   }
 
   async function downloadAssetWithRetry(url, fileNameGuess, callback) {
+    const { retryDelay, maxRetryAttempts } = options;
     let retryAttempts = 0;
-    const maxRetryAttempts = 3;
-    const retryDelay = 1000;
 
     while (retryAttempts < maxRetryAttempts) {
       try {
@@ -240,8 +278,6 @@ export default async function extractAssets(
 
           retryAttempts++;
         } else {
-          logError(`Failed to download asset from ${url}.`);
-
           break;
         }
       }
@@ -274,76 +310,83 @@ export default async function extractAssets(
 
   async function processCssFile(fileName, absoluteAssetUrl) {
     if (fileName.endsWith('.css')) {
-      await extractAssets(absoluteAssetUrl, basePath, '', false);
+      await extractAssets(absoluteAssetUrl, {
+        basePath: options.basePath,
+        saveFile: false,
+      });
     }
   }
 
   async function processMatches(matches) {
-    matches.map(async (parsedUrl) => {
-      let absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
-      const destinationPath = formDestinationPath(absoluteAssetUrl, basePath);
+    Promise.all(
+      matches.map(async (parsedUrl) => {
+        let absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
+        const destinationPath = formDestinationPath(absoluteAssetUrl);
 
-      try {
-        await mkdirRecursive(destinationPath);
-      } catch (error) {
-        logError('Error processing parsed url: ' + absoluteAssetUrl, error);
-      }
-
-      try {
-        await parseFileNameFromUrl(absoluteAssetUrl, async (fileNameGuess) => {
-          try {
-            await downloadAssetWithRetry(
-              absoluteAssetUrl,
-              fileNameGuess,
-              async (responseData, fileName) => {
-                const destinationFilePath = formDestinationFilePath(
-                  destinationPath,
-                  fileName
-                );
-
-                htmlString = replaceHtmlWithRelativeUrls(
-                  htmlString,
-                  absoluteAssetUrl,
-                  destinationPath,
-                  fileName
-                );
-
-                if (saveFile) {
-                  saveHtmlFile(htmlString, basePath);
-                }
-
-                await saveAsset(destinationFilePath, responseData);
-                await processCssFile(fileName, absoluteAssetUrl);
-              }
-            );
-          } catch (error) {
-            logError(error.message);
-          }
-        });
-      } catch (error) {
-        if (isNetworkError(error)) {
-          logError(
-            `Network error occurred while downloading asset from ${absoluteAssetUrl}: ${error.message}`
-          );
-        } else if (isAccessError(error)) {
-          logError(
-            `Error saving asset to ${destinationFilePath}: Permission denied or target path is a directory`
-          );
-        } else {
-          logError(
-            `Error downloading asset from ${absoluteAssetUrl}: ${error.message}`
-          );
+        try {
+          await mkdirRecursive(destinationPath);
+        } catch (error) {
+          logError('Error processing parsed url: ' + absoluteAssetUrl, error);
         }
-      }
 
-      return parsedUrl;
-    });
+        try {
+          await parseFileNameFromUrl(
+            absoluteAssetUrl,
+            async (fileNameGuess) => {
+              try {
+                await downloadAssetWithRetry(
+                  absoluteAssetUrl,
+                  fileNameGuess,
+                  async (responseData, fileName) => {
+                    const destinationFilePath = formDestinationFilePath(
+                      destinationPath,
+                      fileName
+                    );
+
+                    htmlString = replaceHtmlWithRelativeUrls(
+                      htmlString,
+                      absoluteAssetUrl,
+                      destinationPath,
+                      fileName
+                    );
+
+                    if (options.saveFile) {
+                      saveHtmlFile(htmlString);
+                    }
+
+                    await saveAsset(destinationFilePath, responseData);
+                    await processCssFile(fileName, absoluteAssetUrl);
+                  }
+                );
+              } catch (error) {
+                logError(error.message);
+              }
+            }
+          );
+        } catch (error) {
+          if (isNetworkError(error)) {
+            logError(
+              `Network error occurred while downloading asset from ${absoluteAssetUrl}: ${error.message}`
+            );
+          } else if (isAccessError(error)) {
+            logError(
+              `Error saving asset to ${destinationFilePath}: Permission denied or target path is a directory`
+            );
+          } else {
+            logError(
+              `Error downloading asset from ${absoluteAssetUrl}: ${error.message}`
+            );
+          }
+        }
+
+        return parsedUrl;
+      })
+    );
   }
 
   function performHtmlReplacements(htmlString, userInput) {
-    htmlString = htmlString.replaceAll(/srcset="(.*?)"/g, '');
-    htmlString = htmlString.replaceAll(/srcSet="(.*?)"/g, '');
-    htmlString = htmlString.replaceAll(/sizes="(.*?)"/g, '');
+    htmlString = htmlString.replaceAll(/srcset="(.*?)"/gi, '');
+    htmlString = htmlString.replaceAll(/sizes="(.*?)"/gi, '');
 
     let regex = new RegExp(userInput, 'g');
 
@@ -448,45 +491,48 @@ export default async function extractAssets(
   }
 
   function logProgress(message) {
-    console.log(`[Progress] ${message}`);
+    if (options.verbose) {
+      console.log(`[Progress] ${message}`);
+    }
   }
 
   function logSuccess(message) {
-    console.log(`[Success] ${message}`);
+    if (options.verbose) {
+      console.log(`[Success] ${message}`);
+    }
   }
 
   function logError(message) {
-    console.error(`[Error] ${message}`);
+    if (options.verbose) {
+      console.error(`[Error] ${message}`);
+    }
   }
 
-  let response;
   let htmlString;
 
-  if (typeof userInput !== 'string' || typeof basePath !== 'string') {
+  if (typeof userInput !== 'string' || typeof options.basePath !== 'string') {
     logError('Invalid user input: source and basePath must be strings.');
   }
 
   if (isUrl(userInput)) {
     if (isUrlValid(userInput)) {
-      const url = userInput;
-
       try {
-        logProgress('Fetching HTML content...');
+        logProgress('Fetching content...');
 
-        response = await axios.get(url);
-        htmlString = response.data;
+        const { data } = await axios.get(userInput);
+        htmlString = data;
 
-        logSuccess('HTML content fetched successfully');
+        logSuccess('Content fetched successfully');
       } catch (error) {
-        logError(`Error fetching HTML content from url: ${error.message}`);
+        logError(`Error fetching content from url: ${error.message}`);
       }
     }
   } else {
     htmlString = userInput;
-    userInput = source;
+    userInput = options.source;
 
-    if (isValidSource(source)) {
-      isUrlValid(source);
+    if (isValidSource(options.source)) {
+      isUrlValid(options.source);
     }
   }
 
@@ -502,20 +548,3 @@ export default async function extractAssets(
 
   return htmlString;
 }
-
-await extractAssets(
-  `
-<main class="min-h-full bg-cover bg-top sm:bg-top" style="background-image: url('https://images.unsplash.com/photo-1545972154-9bb223aac798?ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&ixlib=rb-1.2.1&auto=format&fit=crop&w=3050&q=80&exp=8&con=-15&sat=-75')">
-  <div class="max-w-7xl mx-auto px-4 py-16 text-center sm:px-6 sm:py-24 lg:px-8 lg:py-48">
-    <p class="text-sm font-semibold text-black text-opacity-50 uppercase tracking-wide">404 error</p>
-    <h1 class="mt-2 text-4xl font-extrabold text-white tracking-tight sm:text-5xl">Uh oh! I think you’re lost.</h1>
-    <p class="mt-2 text-lg font-medium text-black text-opacity-50">It looks like the page you’re looking for doesn't exist.</p>
-    <div class="mt-6">
-      <a href="#" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-black text-opacity-75 bg-white bg-opacity-75 sm:bg-opacity-25 sm:hover:bg-opacity-50"> Go back home </a>
-    </div>
-  </div>
-</main>
-
-`,
-  '/Users/diogoangelim/test'
-);
