@@ -14,9 +14,10 @@ cd /your/clone/directory && npm install
 
 ### Usage
 
-The extractAssets function takes three parameters:
+The extractAssets function takes two parameters:
 
 **input**: Can be either a URL or an HTML string.
+
 **options**: An optional object with arguments that allow you to further customize the behavior. See below for more details.
 
 | Name             | Description                                                                                                                            | Type    | Default           |
