@@ -85,7 +85,7 @@ export default async function extractAssets(userInput: string, options: Options 
   }
 
   function willFormDuplicateSlashes(userInput: string, url: string): boolean {
-    return userInput.endsWith('/') && url.startsWith('/');
+    return userInput?.endsWith('/') && url?.startsWith('/');
   }
 
   function isRelativeUrl(url: string): boolean {

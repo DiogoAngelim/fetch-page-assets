@@ -56,7 +56,7 @@ export default async function extractAssets(userInput, options = {
         }
     }
     function willFormDuplicateSlashes(userInput, url) {
-        return userInput.endsWith('/') && url.startsWith('/');
+        return userInput?.endsWith('/') && url?.startsWith('/');
     }
     function isRelativeUrl(url) {
         return !url.startsWith('http') && !url.startsWith('//');
@@ -315,17 +315,17 @@ export default async function extractAssets(userInput, options = {
     }
     function logProgress(message) {
         if (options.verbose === true) {
-            console.log(`[Progress] ${message}`.yellow);
+            console.log(`[Progress] ${message}`);
         }
     }
     function logSuccess(message) {
         if (options.verbose === true) {
-            console.log(`[Success] ${message}`.green);
+            console.log(`[Success] ${message}`);
         }
     }
     function logError(message) {
         if (options.verbose === true) {
-            console.error(`[Error] ${message}`.red);
+            console.error(`[Error] ${message}`);
         }
     }
     let htmlString = '';
