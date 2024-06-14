@@ -4,16 +4,14 @@ import path from 'path';
 import beautify from 'beautify';
 import { decode } from 'html-entities';
 import mime from 'mime';
-export default async function extractAssets(userInput, options = {
-    basePath: process.cwd(),
-    source: '',
-    saveFile: true,
-    protocol: 'https',
-    verbose: true,
-    parseCss: true,
-    maxRetryAttempts: 3,
-    retryDelay: 1000,
-}) {
+export default async function extractAssets(userInput, options = {}) {
+    let { basePath, source, protocol, maxRetryAttempts, retryDelay } = options;
+    basePath = basePath || process.cwd();
+    source = source || '';
+    protocol = protocol || 'https';
+    maxRetryAttempts = maxRetryAttempts || 3;
+    retryDelay = retryDelay || 1000;
+    options = { ...options, basePath, source, protocol, maxRetryAttempts, retryDelay };
     function prependHttpProtocol(url) {
         if (url.startsWith('//')) {
             return `${options.protocol}:${url}`;
@@ -56,7 +54,7 @@ export default async function extractAssets(userInput, options = {
         }
     }
     function willFormDuplicateSlashes(userInput, url) {
-        return userInput?.endsWith('/') && url?.startsWith('/');
+        return userInput.endsWith('/') && url.startsWith('/');
     }
     function isRelativeUrl(url) {
         return !url.startsWith('http') && !url.startsWith('//');

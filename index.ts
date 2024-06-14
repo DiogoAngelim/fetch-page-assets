@@ -16,16 +16,16 @@ interface Options {
   retryDelay?: number
 }
 
-export default async function extractAssets(userInput: string, options: Options = {
-  basePath: process.cwd(),
-  source: '',
-  saveFile: true,
-  protocol: 'https',
-  verbose: true,
-  parseCss: true,
-  maxRetryAttempts: 3,
-  retryDelay: 1000,
-}): Promise<string> {
+export default async function extractAssets(userInput: string, options: Options = {}): Promise<string> {
+  let { basePath, source, protocol, maxRetryAttempts, retryDelay } = options
+  basePath = basePath || process.cwd();
+  source = source || '';
+  protocol = protocol || 'https';
+  maxRetryAttempts = maxRetryAttempts || 3;
+  retryDelay = retryDelay || 1000;
+
+  options = { ...options, basePath, source, protocol, maxRetryAttempts, retryDelay };
+
   function prependHttpProtocol(url: string): string {
     if (url.startsWith('//')) {
       return `${options.protocol}:${url}`;
@@ -85,7 +85,7 @@ export default async function extractAssets(userInput: string, options: Options 
   }
 
   function willFormDuplicateSlashes(userInput: string, url: string): boolean {
-    return userInput?.endsWith('/') && url?.startsWith('/');
+    return userInput.endsWith('/') && url.startsWith('/');
   }
 
   function isRelativeUrl(url: string): boolean {
