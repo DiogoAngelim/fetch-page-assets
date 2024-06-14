@@ -80,7 +80,7 @@ export default async function extractAssets(userInput: string, options: Options 
 
     try {
       return !!new URL(newString);
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -147,7 +147,6 @@ export default async function extractAssets(userInput: string, options: Options 
   }
 
   function getAssetRemotePath(parsedUrl: string): string {
-
     if (isUrl(parsedUrl)) {
       return new URL(parsedUrl).pathname;
     } else if (isRelativeUrl(parsedUrl)) {
@@ -315,71 +314,62 @@ export default async function extractAssets(userInput: string, options: Options 
     }
   }
 
-  async function processMatches(matches: string[]): Promise<void> {
-    Promise.all(
-      matches.map(async (parsedUrl) => {
-        const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
-        const destinationPath = formDestinationPath(absoluteAssetUrl);
+  async function processMatches(matches: string[]): Promise<any> {
+    for (const parsedUrl of matches) {
+      const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
+      const destinationPath = formDestinationPath(absoluteAssetUrl);
 
-        try {
-          await mkdirRecursive(destinationPath);
-        } catch (error) {
-          logError(`Error processing parsed url: ${absoluteAssetUrl} ${error.message}`);
-        }
-
-        try {
-          await parseFileNameFromUrl(
-            absoluteAssetUrl,
-            async (fileNameGuess: string) => {
-              try {
-                await downloadAssetWithRetry(
-                  absoluteAssetUrl,
-                  fileNameGuess,
-                  async (responseData: string, fileName: string) => {
-                    const destinationFilePath = formDestinationFilePath(
-                      destinationPath,
-                      fileName
-                    );
-
-                    htmlString = replaceHtmlWithRelativeUrls(
-                      htmlString,
-                      absoluteAssetUrl,
-                      destinationPath,
-                      fileName
-                    );
-
-                    if (options.saveFile) {
-                      saveHtmlFile(htmlString);
-                    }
-
-                    saveAsset(destinationFilePath, responseData);
-                    await processCssFile(fileName, absoluteAssetUrl);
-                  }
+      try {
+        await mkdirRecursive(destinationPath);
+        await parseFileNameFromUrl(
+          absoluteAssetUrl,
+          async (fileNameGuess: string) => {
+            await downloadAssetWithRetry(
+              absoluteAssetUrl,
+              fileNameGuess,
+              async (responseData: string, fileName: string) => {
+                const destinationFilePath = formDestinationFilePath(
+                  destinationPath,
+                  fileName
                 );
-              } catch (error) {
-                logError(error.message);
+
+                htmlString = replaceHtmlWithRelativeUrls(
+                  htmlString,
+                  absoluteAssetUrl,
+                  destinationPath,
+                  fileName
+                );
+
+                if (options.saveFile) {
+                  saveHtmlFile(htmlString);
+                }
+
+                saveAsset(destinationFilePath, responseData);
+                await processCssFile(fileName, absoluteAssetUrl);
+
               }
-            }
-          );
-        } catch (error) {
-          if (isNetworkError(error)) {
-            logError(
-              `Network error occurred while downloading asset from ${absoluteAssetUrl}: ${error.message}.`
-            );
-          } else if (isAccessError(error)) {
-            logError(
-              `Error saving asset. Permission denied or target path is a directory.`
-            );
-          } else {
-            logError(
-              `Error downloading asset from ${absoluteAssetUrl}: ${error.message}.`
             );
           }
+        );
+        
+      } catch (error) {
+        if (isNetworkError(error)) {
+          logError(
+            `Network error occurred while downloading asset from ${absoluteAssetUrl}: ${error.message}.`
+          );
+        } else if (isAccessError(error)) {
+          logError(
+            `Error saving asset. Permission denied or target path is a directory.`
+          );
+        } else {
+          logError(
+            `Error downloading asset from ${absoluteAssetUrl}: ${error.message}.`
+          );
         }
+      }
+    };
 
-        return parsedUrl;
-      })
-    );
+    return htmlString;
   }
 
   function performHtmlReplacements(htmlString: string, userInput: string): string {
@@ -432,9 +422,7 @@ export default async function extractAssets(userInput: string, options: Options 
   }
 
   function hasExtension(fileName: string): boolean {
-    const components = fileName.split('.');
-
-    return components.length > 1;
+    return fileName.split('.').length > 1;
   }
 
   function getExtension(mimeType: string, fileName: string): string {
@@ -473,13 +461,6 @@ export default async function extractAssets(userInput: string, options: Options 
     return data;
   }
 
-  function isValidSource(source: string): boolean {
-    return !!source &&
-      typeof source === 'string' &&
-      source.trim() !== '' &&
-      isUrl(source);
-  }
-
   function logProgress(message: string): void {
     if (options.verbose === true) {
       console.log(`[Progress] ${message}`.yellow);
@@ -506,12 +487,10 @@ export default async function extractAssets(userInput: string, options: Options 
 
   if (isUrl(userInput)) {
     if (isUrlValid(userInput)) {
-      userInput = appendForwardSlash(userInput);
-
       logProgress('Fetching content...');
 
       try {
-        const { data }: { data: string } = await axios.get(userInput);
+        const { data }: { data: string } = await axios.get(appendForwardSlash(userInput));
         htmlString = data;
 
         logSuccess('Content fetched successfully');
@@ -522,21 +501,13 @@ export default async function extractAssets(userInput: string, options: Options 
   } else {
     htmlString = userInput;
     userInput = options.source;
-
-    if (isValidSource(options.source)) {
-      isUrlValid(options.source);
-    }
   }
 
   if (isValidHtmlString(htmlString)) {
-    htmlString = performHtmlReplacements(htmlString, userInput);
-
-    const urls = parseUrls(htmlString);
-
-    await processMatches(urls);
-  } else {
-    logError('Invalid HTML string.');
-  }
+    return await processMatches(parseUrls(performHtmlReplacements(htmlString, userInput)));
+  } 
+  
+  logError('Invalid HTML string.');
 
   return htmlString;
 }

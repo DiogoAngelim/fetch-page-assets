@@ -51,7 +51,7 @@ export default async function extractAssets(userInput, options = {
         try {
             return !!new URL(newString);
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -222,31 +222,21 @@ export default async function extractAssets(userInput, options = {
         }
     }
     async function processMatches(matches) {
-        Promise.all(matches.map(async (parsedUrl) => {
+        for (const parsedUrl of matches) {
             const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
             const destinationPath = formDestinationPath(absoluteAssetUrl);
             try {
                 await mkdirRecursive(destinationPath);
-            }
-            catch (error) {
-                logError(`Error processing parsed url: ${absoluteAssetUrl} ${error.message}`);
-            }
-            try {
                 await parseFileNameFromUrl(absoluteAssetUrl, async (fileNameGuess) => {
-                    try {
-                        await downloadAssetWithRetry(absoluteAssetUrl, fileNameGuess, async (responseData, fileName) => {
-                            const destinationFilePath = formDestinationFilePath(destinationPath, fileName);
-                            htmlString = replaceHtmlWithRelativeUrls(htmlString, absoluteAssetUrl, destinationPath, fileName);
-                            if (options.saveFile) {
-                                saveHtmlFile(htmlString);
-                            }
-                            saveAsset(destinationFilePath, responseData);
-                            await processCssFile(fileName, absoluteAssetUrl);
-                        });
-                    }
-                    catch (error) {
-                        logError(error.message);
-                    }
+                    await downloadAssetWithRetry(absoluteAssetUrl, fileNameGuess, async (responseData, fileName) => {
+                        const destinationFilePath = formDestinationFilePath(destinationPath, fileName);
+                        htmlString = replaceHtmlWithRelativeUrls(htmlString, absoluteAssetUrl, destinationPath, fileName);
+                        if (options.saveFile) {
+                            saveHtmlFile(htmlString);
+                        }
+                        saveAsset(destinationFilePath, responseData);
+                        await processCssFile(fileName, absoluteAssetUrl);
+                    });
                 });
             }
             catch (error) {
@@ -260,8 +250,9 @@ export default async function extractAssets(userInput, options = {
                     logError(`Error downloading asset from ${absoluteAssetUrl}: ${error.message}.`);
                 }
             }
-            return parsedUrl;
-        }));
+        }
+        ;
+        return htmlString;
     }
     function performHtmlReplacements(htmlString, userInput) {
         htmlString = htmlString.replace(/srcset="(.*?)"/gi, '');
@@ -298,8 +289,7 @@ export default async function extractAssets(userInput, options = {
         return fileName;
     }
     function hasExtension(fileName) {
-        const components = fileName.split('.');
-        return components.length > 1;
+        return fileName.split('.').length > 1;
     }
     function getExtension(mimeType, fileName) {
         const components = fileName.split('.');
@@ -323,12 +313,6 @@ export default async function extractAssets(userInput, options = {
         await callback(data, fileName);
         return data;
     }
-    function isValidSource(source) {
-        return !!source &&
-            typeof source === 'string' &&
-            source.trim() !== '' &&
-            isUrl(source);
-    }
     function logProgress(message) {
         if (options.verbose === true) {
             console.log(`[Progress] ${message}`.yellow);
@@ -350,10 +334,9 @@ export default async function extractAssets(userInput, options = {
     }
     if (isUrl(userInput)) {
         if (isUrlValid(userInput)) {
-            userInput = appendForwardSlash(userInput);
             logProgress('Fetching content...');
             try {
-                const { data } = await axios.get(userInput);
+                const { data } = await axios.get(appendForwardSlash(userInput));
                 htmlString = data;
                 logSuccess('Content fetched successfully');
             }
@@ -365,17 +348,10 @@ export default async function extractAssets(userInput, options = {
     else {
         htmlString = userInput;
         userInput = options.source;
-        if (isValidSource(options.source)) {
-            isUrlValid(options.source);
-        }
     }
     if (isValidHtmlString(htmlString)) {
-        htmlString = performHtmlReplacements(htmlString, userInput);
-        const urls = parseUrls(htmlString);
-        await processMatches(urls);
+        return await processMatches(parseUrls(performHtmlReplacements(htmlString, userInput)));
     }
-    else {
-        logError('Invalid HTML string.');
-    }
+    logError('Invalid HTML string.');
     return htmlString;
 }
