@@ -4,17 +4,16 @@ import path from 'path';
 import beautify from 'beautify';
 import { decode } from 'html-entities';
 import mime from 'mime';
-import colors from 'colors';
 
 interface Options {
-  basePath: string,
-  source: string,
-  saveFile: boolean,
-  protocol: string,
-  verbose: boolean,
-  parseCss: boolean,
-  maxRetryAttempts: number,
-  retryDelay: number
+  basePath?: string,
+  source?: string,
+  saveFile?: boolean,
+  protocol?: string,
+  verbose?: boolean,
+  parseCss?: boolean,
+  maxRetryAttempts?: number,
+  retryDelay?: number
 }
 
 export default async function extractAssets(userInput: string, options: Options = {
@@ -463,19 +462,19 @@ export default async function extractAssets(userInput: string, options: Options 
 
   function logProgress(message: string): void {
     if (options.verbose === true) {
-      console.log(`[Progress] ${message}`.yellow);
+      console.log(`[Progress] ${message}`);
     }
   }
 
   function logSuccess(message: string): void {
     if (options.verbose === true) {
-      console.log(`[Success] ${message}`.green);
+      console.log(`[Success] ${message}`);
     }
   }
 
   function logError(message: string): void {
     if (options.verbose === true) {
-      console.error(`[Error] ${message}`.red);
+      console.error(`[Error] ${message}`);
     }
   }
 
