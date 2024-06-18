@@ -12,501 +12,479 @@ interface Options {
   protocol?: string,
   verbose?: boolean,
   parseCss?: boolean,
+  retryDelay?: number,
   maxRetryAttempts?: number,
-  retryDelay?: number
 }
 
-export default async function extractAssets(userInput: string, options: Options = {}): Promise<string> {
-  let { basePath, source, protocol, maxRetryAttempts, retryDelay } = options
-  basePath = basePath || process.cwd();
+interface FileOptions { 
+  parsedUrl: string,
+  destinationPath?: string,
+  fileName?: string,
+  responseData?: string,
+  fileNameGuess?: string,
+  absoluteAssetUrl?: string, 
+  destinationFilePath?: string,
+  
+}
+
+type CallbackFunction = (data: string, fileName: string) => Promise<any>;
+
+const extractAssets = async (userInput: string, options: Options = { 
+  saveFile: true,
+  verbose: true,
+  }): Promise<string> => {
+  let { 
+    basePath, 
+    source, 
+    protocol, 
+    maxRetryAttempts, 
+    retryDelay, 
+    verbose, 
+    saveFile,
+  } = options;
+
   source = source || '';
   protocol = protocol || 'https';
-  maxRetryAttempts = maxRetryAttempts || 3;
   retryDelay = retryDelay || 1000;
+  basePath = basePath || process.cwd();
+  maxRetryAttempts = maxRetryAttempts || 3;
 
-  options = { ...options, basePath, source, protocol, maxRetryAttempts, retryDelay };
+  let htmlString = '';
 
-  function prependHttpProtocol(url: string): string {
-    if (url.startsWith('//')) {
-      return `${options.protocol}:${url}`;
+  const logMessage = (message: string, func: string, type: string): void => {
+    if (verbose) {
+      console[func](`${type} ${message}`);
     }
-
-    return url;
   }
 
-  function appendForwardSlash(userInput: string): string {
-    if (!userInput.endsWith('/')) {
-      return `${userInput}/`;
-    }
-
-    return userInput;
+  const isDynamicProtocol = (url: string) => {
+    return url.startsWith('//');
   }
 
-  function isUrlValid(url: string): boolean {
+  const prependHttpProtocol = (url: string): string => {
+    return isDynamicProtocol(url) ? `${protocol}:${url}` : url;
+  }
+
+  const inputEndsWithSlash = () => {
+    return userInput.endsWith('/');
+  }
+
+  const appendForwardSlash = (): string => {
+    return inputEndsWithSlash() ? userInput : `${userInput}/`;
+  }
+
+  const isProtocolInvalid = (protocol: string): boolean => {
+    return !['http', 'https'].includes(protocol);
+  }
+
+  const checkProtocol = (protocol: string): void => {
+    if (isProtocolInvalid(protocol)) {
+      throw new Error('Invalid protocol in baseUrl. Only http and https protocols are supported.');
+    }
+  }
+
+  const checkHostName = (hostname: string) => {
+    if (!hostname) {
+      throw new Error('Invalid baseUrl. Please provide a valid URL with a hostname.');
+    }
+  }
+
+  const checkUrl = (url: string): boolean => {
+    const { protocol, hostname, href } = new URL(removeQueryParams(url));
+
+    checkProtocol(protocol);
+    checkHostName(hostname);
+
+    return !!href;
+  }
+
+  const isUrlValid = (url: string): boolean => {
     try {
-      const baseUrlWithoutQueryOrFragment = url.split('?')[0].split('#')[0];
-
-      const newUrl = new URL(baseUrlWithoutQueryOrFragment);
-
-      if (newUrl.protocol !== 'http:' && newUrl.protocol !== 'https:') {
-        logError(
-          'Invalid protocol in baseUrl. Only http and https protocols are supported.'
-        );
-      }
-
-      if (!newUrl.hostname) {
-        logError(
-          'Invalid baseUrl. Please provide a valid URL with a hostname.'
-        );
-      }
-
-      return !!newUrl.href;
+      return checkUrl(url);
     } catch (error) {
-      logError(
-        'Invalid type of url. Please provide a url with a valid format.'
-      );
-
+      logMessage(error, 'error', 'Error');
       return false;
     }
   }
 
-  function isValidHtmlString(htmlString: string): boolean {
-    return !!(htmlString && htmlString.trim() !== '');
+  const willFormDuplicateSlashes = (url: string): boolean => {
+    return inputEndsWithSlash() && url.startsWith('/');
   }
 
-  function isUrl(string: string): boolean {
-    const newString = prependHttpProtocol(string);
-
-    try {
-      return !!new URL(newString);
-    } catch {
-      return false;
-    }
+  const isRelativeUrl = (url: string): boolean => {
+    return !url.startsWith('http') && !isDynamicProtocol(url);
   }
 
-  function willFormDuplicateSlashes(userInput: string, url: string): boolean {
-    return userInput.endsWith('/') && url.startsWith('/');
+  const processPath = (url: string): { urlLength: number, parts: string[] } => {
+    return { urlLength: url.split('../').length, parts: userInput.split('/') };
   }
 
-  function isRelativeUrl(url: string): boolean {
-    return !url.startsWith('http') && !url.startsWith('//');
-  }
-
-  function formPathWithDots(userInput: string, url: string): string {
-    const newUrl = url.split('../');
-    const length = newUrl.length;
-    const parts = userInput.split('/');
-
+  const setParts = (parts: string[], urlLength: number): string => {
     let i = 0;
 
-    while (i <= length && parts.length) {
+    while (i <= urlLength && parts.length) {
       parts.pop();
       i++;
     }
 
     parts.shift();
+
+    return parts.join('/');
+  }
+
+  const formPathWithDots = (url: string): string => {
+    const { urlLength, parts } = processPath(url);
     
-    return `${options.protocol}://${parts.join('/')}/${url[length - 1]}`;
+    return `${protocol}://${setParts(parts, urlLength)}/${url[urlLength - 1]}`;
   }
 
-  function formAssetAbsoluteUrl(url: string, userInput: string): string {
-    let newUserInput = userInput;
-
-    if (isRelativeUrl(url)) {
-      if (willFormDuplicateSlashes(userInput, url)) {
-        newUserInput = userInput.slice(0, -1);
-      }
-
-      const fileName = path.basename(newUserInput);
-
-      if (url.includes('../')) {
-        newUserInput = newUserInput.replace(fileName, '');
-
-        return formPathWithDots(userInput, url);
-      }
-
-      return path.join(newUserInput, url);
-    }
-
-    return prependHttpProtocol(url);
+  const joinPath = (paths: string[]): string => {
+    return path.join(...paths);
   }
 
-  function handleDuplicateSlashes(parsedUrl: string): void {
-    if (willFormDuplicateSlashes(userInput, parsedUrl)) {
-      userInput = userInput.slice(0, -1);
+  const removeForwardSlash = (): void => {
+    userInput.slice(0, -1);
+  }
+
+  const handleDuplicateSlashes = (url: string): void => {
+    if (willFormDuplicateSlashes(url)) {
+      removeForwardSlash();
     }
   }
 
-  function handleCssFileInput(): void {
-    if (path.extname(userInput).startsWith('.css')) {
-      const fileName = path.basename(userInput);
+  const parseUserInput = (url: string): string => {
+    handleDuplicateSlashes(url);
+    
+    return url.includes('../') ? formPathWithDots(url) : joinPath([userInput.replace(path.basename(userInput), ''), url]);
+  }
 
-      userInput = userInput.replace(fileName, '');
+  const formAssetAbsoluteUrl = (url: string): string => {
+    return isRelativeUrl(url) ? parseUserInput(url) : prependHttpProtocol(url);
+  }
+
+  const handleCssFileInput = (): void => {
+    userInput = path.extname(userInput).startsWith('.css') ? userInput.replace(path.basename(userInput), '') : userInput;
+  }
+
+  const isUrl = (string: string): boolean => {
+    try {
+      return !!new URL(prependHttpProtocol(string));
+    } catch {
+      return false;
     }
   }
 
-  function getAssetRemotePath(parsedUrl: string): string {
+  const handleRelativeUrl = (parsedUrl: string): string => {
+    handleDuplicateSlashes(parsedUrl);
+    handleCssFileInput();
+
+    return joinPath([userInput, parsedUrl]);
+  }
+
+  const getAssetRemotePath = (parsedUrl: string): string => {
     if (isUrl(parsedUrl)) {
       return new URL(parsedUrl).pathname;
     } else if (isRelativeUrl(parsedUrl)) {
-      handleDuplicateSlashes(parsedUrl);
-      handleCssFileInput();
-
-      return path.join(userInput, parsedUrl);
-    }
-
-    return parsedUrl;
-  }
-
-  function formDestinationPath(parsedUrl: string): string {
-    const newParsedUrl = prependHttpProtocol(parsedUrl);
-    const assetRemotePath = getAssetRemotePath(newParsedUrl);
-    const destinationPath = path.join(options.basePath, assetRemotePath);
-
-    return destinationPath.replace(/\/[^\/]*$/, '');
-  }
-
-  function directoryCreationCallback(error: { message: string }, destinationPath: string):void {
-    if (error) {
-      logError(`Error creating directory ${destinationPath}: ${error.message}`);
+      return handleRelativeUrl(parsedUrl);
     } else {
-      logSuccess(`Directory created: ${destinationPath}`);
+      return parsedUrl;
     }
   }
 
-  async function mkdirRecursive(destinationPath: string): Promise<void> {
-    fs.mkdir(destinationPath, { recursive: true }, async (error: any) => {
+  const formDestinationPath = (parsedUrl: string): string => {
+    return joinPath([basePath, getAssetRemotePath(prependHttpProtocol(parsedUrl))]).replace(/\/[^\/]*$/, '');
+  }
+
+  const directoryCreationCallback = (error: { message: string }, destinationPath: string): void => {
+    if (error) {
+      logMessage(`Error creating directory ${destinationPath}: ${error.message}`, 'error', 'Error');
+    } else {
+      logMessage(`Directory created: ${destinationPath}`, 'log', 'Success');
+    }
+  }
+
+  const createDirectory = (destinationPath: string): void => {
+    fs.mkdir(destinationPath, { recursive: true }, (error: any): void => {
       directoryCreationCallback(error, destinationPath);
     });
   }
 
-  async function parseFileNameFromUrl(absoluteUrl: string, callback: CallableFunction): Promise<void> {
+  const mkdirRecursive = (destinationPath: string): void => {
+    createDirectory(destinationPath);
+  }
+
+  const parseFileNameFromUrl = async (absoluteUrl: string, callback: CallableFunction): Promise<void> => {
     const urlObject = new URL(absoluteUrl);
-    const fileName =
-      urlObject?.href
-        ? urlObject.href.match(/([%2F|\/](?:.(?!%2F|\/))+$)/g)
-        : null;
-    const fileName2 =
-      fileName?.length ? fileName[0].replace(/\/|%2F/, '') : null;
+    const fileName = urlObject?.href ? urlObject.href.match(/([%2F|\/](?:.(?!%2F|\/))+$)/g) : null;
+    const fileName2 = fileName?.length ? fileName[0].replace(/\/|%2F/, '') : null;
     const fileName3 = fileName2 ? fileName2.match(/^(.*?)(\.[^.]*)?$/) : null;
     const m2 = fileName2? fileName2.match(/([\/.\w]+)([.][\w]+)([?][\w.\/=]+)?/) : null;
-    const fileName4 =
-      fileName2 &&
-      fileName3 &&
-      fileName3.length &&
-      m2
-        ? fileName3[1] +
-          m2[2]
-        : urlObject.pathname;
 
-    await callback(fileName4);
+    await callback(fileName2 && fileName3 && fileName3.length && m2 ? fileName3[1] + m2[2] : urlObject.pathname);
   }
 
-  function saveHtmlFile(htmlString: string) {
-    fs.writeFileSync(
-      path.join(options.basePath, 'index.html'),
-      beautify(htmlString, { format: 'html' }),
-      'utf8'
-    );
+  const saveHtmlFile = (fileOptions: FileOptions): void => {
+    if (saveFile) {
+      replaceHtmlWithRelativeUrls(fileOptions);
+      fs.writeFileSync(joinPath([basePath, 'index.html']), beautify(htmlString, { format: 'html' }), 'utf8');
+    }
   }
 
-  function formDestinationFilePath(destinationPath: string, fileName: string): string {
-    const destinationFilePath = path.join(destinationPath, fileName);
-
-    return destinationFilePath.split('?')[0].split('#')[0];
+  const removeQueryParams = (url: string): string => {
+    return url.split('?')[0].split('#')[0];
   }
 
-  function replaceHtmlWithRelativeUrls(
-    htmlString: string,
-    parsedUrl: string,
-    destinationPath: string,
-    fileName: string
-  ): string {
-    const destinationFilePath = formDestinationFilePath(
-      destinationPath,
-      fileName
-    );
+  const formDestinationFilePath = (destinationPath: string, fileName: string): string => {
+    return removeQueryParams(joinPath([destinationPath, fileName]));
+  }
+
+  function replaceHtmlWithRelativeUrls(fileOptions: FileOptions): void {
+    const { parsedUrl, destinationFilePath } = fileOptions;
     const { origin } = new URL(parsedUrl);
-    const localUrl = parsedUrl.replace(origin, '');
-    const relativePath = destinationFilePath.replace(
-      `${options.basePath}/`,
-      ''
-    );
+    
 
-    htmlString = htmlString.replace(origin, '');
-
-    return htmlString.replace(localUrl, relativePath);
+    htmlString = htmlString.replace(origin, '').replace(parsedUrl.replace(origin, ''), destinationFilePath.replace(`${basePath.replace('../', '').replace('./', '')}/`, ''));
   }
 
-  async function downloadAssetWithRetry(url: string, fileNameGuess: string, callback: CallableFunction): Promise<void> {
-    const { retryDelay, maxRetryAttempts } = options;
-    let retryAttempts = 0;
-
-    while (retryAttempts < maxRetryAttempts) {
-      try {
-        await getData(url, fileNameGuess, async (data, fileName) => {
-          if (data) {
-            await callback(data, fileName);
-
-            return;
-          }
-        });
-
-        break;
-      } catch (error) {
-        logError(`Error downloading asset from ${url}: ${error.message}`);
-
-        if (error.code === 'ERR_BAD_REQUEST') {
-          break;
-        }
-
-        if (retryAttempts < maxRetryAttempts - 1) {
-          logProgress(
-            `Retrying asset download for ${url} (Attempt ${
-              retryAttempts + 1
-            }/${maxRetryAttempts})...`
-          );
-
-          await new Promise((resolve) => {
-            setTimeout(resolve, retryDelay);
-          });
-
-          retryAttempts++;
-        } else {
-          break;
-        }
-      }
-    }
+  const splitDots = (fileName: string): string[] => {
+    return fileName.split('.');
   }
 
-  function saveAsset(destinationFilePath: string, data: string): void {
-    try {
-      fs.writeFileSync(destinationFilePath, data, 'utf8');
-
-      if (fs.existsSync(destinationFilePath)) {
-        logSuccess(`Asset saved successfully to ${destinationFilePath}`);
-      } else {
-        logError(`Failed to save asset (${destinationFilePath}).`);
-      }
-    } catch (error) {
-      logError(
-        `Error saving asset to ${destinationFilePath}: ${error.message}`
-      );
-    }
+  const hasExtension = (fileName: string): boolean => {
+    return splitDots(fileName).length > 1;
   }
 
-  function isNetworkError(error: { code: string }): boolean {
-    return ['ECONNRESET', 'ETIMEDOUT'].includes(error.code);
+  const getExtension = (mimeType: string, fileName: string): string => {
+    const components = splitDots(fileName);
+
+    return mime.getExtension(mimeType) || components[components.length - 1];
   }
 
-  function isAccessError(error: { code: string }): boolean {
-    return ['EACCES', 'EISDIR'].includes(error.code);
+  const getHeader = (headers: string[], name: string): string => {
+    return headers[name] || headers[name.toLowerCase()];
   }
 
-  async function processCssFile(fileName: string, absoluteAssetUrl: string): Promise<void> {
-    if (fileName.endsWith('.css')) {
-      await extractAssets(absoluteAssetUrl, {
-        ...options,
-        basePath: options.basePath,
-        saveFile: false,
-      });
-    }
+  const getFileNameFromHeaders = (headers: string[]): any => {
+    return (getHeader(headers, 'Content-Disposition'))?.match(/filename="(.*)"/);
   }
 
-  async function processMatches(matches: string[]): Promise<any> {
-    for (const parsedUrl of matches) {
-      const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
-      const destinationPath = formDestinationPath(absoluteAssetUrl);
-
-      try {
-        await mkdirRecursive(destinationPath);
-        await parseFileNameFromUrl(
-          absoluteAssetUrl,
-          async (fileNameGuess: string) => {
-            await downloadAssetWithRetry(
-              absoluteAssetUrl,
-              fileNameGuess,
-              async (responseData: string, fileName: string) => {
-                const destinationFilePath = formDestinationFilePath(
-                  destinationPath,
-                  fileName
-                );
-
-                htmlString = replaceHtmlWithRelativeUrls(
-                  htmlString,
-                  absoluteAssetUrl,
-                  destinationPath,
-                  fileName
-                );
-
-                if (options.saveFile) {
-                  saveHtmlFile(htmlString);
-                }
-
-                saveAsset(destinationFilePath, responseData);
-                await processCssFile(fileName, absoluteAssetUrl);
-
-              }
-            );
-          }
-        );
-        
-      } catch (error) {
-        if (isNetworkError(error)) {
-          logError(
-            `Network error occurred while downloading asset from ${absoluteAssetUrl}: ${error.message}.`
-          );
-        } else if (isAccessError(error)) {
-          logError(
-            `Error saving asset. Permission denied or target path is a directory.`
-          );
-        } else {
-          logError(
-            `Error downloading asset from ${absoluteAssetUrl}: ${error.message}.`
-          );
-        }
-      }
-    };
-
-    return htmlString;
+  const getMimeTypeFromHeaders = (headers: string[]): string => {
+    return getHeader(headers, 'Content-Type');
   }
 
-  function performHtmlReplacements(htmlString: string, userInput: string): string {
-    htmlString = htmlString.replace(/srcset="(.*?)"/gi, '');
-    htmlString = htmlString.replace(/sizes="(.*?)"/gi, '');
-
-    const regex = new RegExp(userInput, 'g');
-
-    return htmlString.replace(regex, '');
-  }
-
-  function parseUrls(htmlString: string): any {
-    let expression =
-      /((<link(.*?)(rel="stylesheet"|rel='stylesheet'))(.*?)(href="|href=\')|((img|script|source)(.*?)(src="|src=\')))(.*?\..*?)("|\')/;
-    let regex = new RegExp(expression, 'g');
-    const htmlMatches = [...htmlString.matchAll(regex)].map((match) => {
-      return match ? match[11] : '';
-    });
-
-    expression = /url\((.*?)\)/;
-    regex = new RegExp(expression, 'g');
-
-    const cssMatches = [...htmlString.matchAll(regex)];
-    const cssMatchesArray = cssMatches.map((match) => {
-      return match ? match[1].replace(/\'|"/g, '') : '';
-    });
-
-    return [...htmlMatches, ...cssMatchesArray].filter((url) => {
-      return !url.startsWith('data:');
-    });
-  }
-
-  function formFileName(headers: any, fileNameGuess: string): string {
-    let fileName =
-      headers['content-disposition'] || headers['Content-Disposition'];
-    const match = fileName ? fileName.match(/filename="(.*)"/) : null;
-    fileName = match ? match[1] : fileNameGuess;
-
+  const formFileName = (headers: any, fileNameGuess: string): string => {
+    let fileName = getFileNameFromHeaders(headers);
+    fileName = fileName ? fileName[1] : fileNameGuess;
     fileName = fileName?.split('?')[0];
 
-    const mimeType = headers['content-type'] || headers['Content-Type'];
+    const mimeType = getMimeTypeFromHeaders(headers);
 
-    if (!hasExtension(fileName) && mimeType) {
-      const extension = getExtension(mimeType, fileName);
-
-      return `${fileName}.${extension}`;
-    }
-
-    return fileName;
+    return !hasExtension(fileName) && mimeType ? `${fileName}.${getExtension(mimeType, fileName)}` : fileName;
   }
 
-  function hasExtension(fileName: string): boolean {
-    return fileName.split('.').length > 1;
-  }
-
-  function getExtension(mimeType: string, fileName: string): string {
-    const components = fileName.split('.');
-    const extensionGuessing = components[components.length - 1];
-
-    return mime.getExtension(mimeType) || extensionGuessing;
-  }
-
-  function onDownloadProgress(progressEvent: AxiosProgressEvent): void {
+  const onDownloadProgress = (progressEvent: AxiosProgressEvent): void => {
     const { loaded, total }: AxiosProgressEvent = progressEvent;
-
-    const progress = loaded && total ? Math.round(
-      (loaded / total) * 100
-    ) : 0;
+    const progress = loaded && total ? Math.round((loaded / total) * 100) : 0;
 
     if (!isNaN(progress)) {
-      logProgress(`Download progress: ${progress}%`);
+      logMessage(`Download progress: ${progress}%`, 'log', 'Progress');
     }
   }
 
-  type CallbackFunction = (data: string, fileName: string) => Promise<any>;
-
-  async function getData(url: string, fileNameGuess: string, callback: CallbackFunction): Promise<string> {
-    const response: AxiosResponse<any> = await axios.get<string>(decode(url), {
-      responseType: 'arraybuffer',
-      onDownloadProgress
-    });
-
-    const { headers, data } = response;
-
-    const fileName = formFileName(headers, fileNameGuess);
-
-    await callback(data, fileName);
+  const getData = async (url: string, fileNameGuess: string, callback: CallbackFunction): Promise<string> => {
+    const { headers, data }: AxiosResponse<any> = await axios.get<string>(decode(url), { responseType: 'arraybuffer', onDownloadProgress });
+    
+    await callback(data, formFileName(headers, fileNameGuess));
 
     return data;
   }
 
-  function logProgress(message: string): void {
-    if (options.verbose === true) {
-      console.log(`[Progress] ${message}`);
-    }
+  const retry = async (url: string, retryAttempts: number): Promise<void> => {
+    logMessage(`Retrying asset download for ${url} (Attempt ${retryAttempts + 1}/${maxRetryAttempts})...`, 'log', 'Progress');
+
+    await new Promise((resolve) => { 
+      setTimeout(resolve, retryDelay);
+    });
   }
 
-  function logSuccess(message: string): void {
-    if (options.verbose === true) {
-      console.log(`[Success] ${message}`);
-    }
+  const retrialError = (code: string, retryAttempts: number) => {
+    return ['ERR_BAD_REQUEST', 'ENOTFOUND'].includes(code) && retryAttempts >= maxRetryAttempts - 1;
   }
 
-  function logError(message: string): void {
-    if (options.verbose === true) {
-      console.error(`[Error] ${message}`);
-    }
-  }
+  const downloadAssetWithRetry = async (url: string, fileNameGuess: string, callback: CallableFunction): Promise<void> => {
+    let retryAttempts = 0;
 
-  let htmlString: string = '';
+    while (retryAttempts < maxRetryAttempts) {
+      try {        
+        await getData(url, fileNameGuess, async (data, fileName) =>  data ? await callback(data, fileName) : null);
 
-  if (typeof userInput !== 'string' || typeof options.basePath !== 'string') {
-    logError('Invalid user input: source and basePath must be strings.');
-  }
-
-  if (isUrl(userInput)) {
-    if (isUrlValid(userInput)) {
-      logProgress('Fetching content...');
-
-      try {
-        const { data }: { data: string } = await axios.get(appendForwardSlash(userInput));
-        htmlString = data;
-
-        logSuccess('Content fetched successfully');
+        break;
       } catch (error) {
-        logError(`Error fetching content from url: ${error.message}`);
+        const { message, code } = error;
+
+        logMessage(`Error downloading asset from ${url}: ${message}`, 'error', 'Error');
+
+        if (retrialError(code, retryAttempts)) {
+          break;
+        } else {
+          await retry(url,retryAttempts);
+          retryAttempts++;
+        }
       }
     }
-  } else {
-    htmlString = userInput;
-    userInput = options.source;
   }
 
-  if (isValidHtmlString(htmlString)) {
-    return await processMatches(parseUrls(performHtmlReplacements(htmlString, userInput)));
-  } 
-  
-  logError('Invalid HTML string.');
+  const checkForFileSaveSuccess = (destinationFilePath: string): void => {
+    if (fs.existsSync(destinationFilePath)) {
+      logMessage(`Asset saved successfully to ${destinationFilePath}`, 'log', 'Success');
+    } else {
+      logMessage(`Failed to save asset (${destinationFilePath}).`, 'error', 'Error');
+    }
+  }
+
+  const saveAsset = (fileOptions: FileOptions): void => {
+    const { responseData, destinationFilePath } = fileOptions;
+    
+    try {
+      fs.writeFileSync(destinationFilePath, responseData, 'utf8');
+
+      checkForFileSaveSuccess(destinationFilePath);
+    } catch (error) {
+      logMessage(`Error saving asset to ${destinationFilePath}: ${error.message}`, 'error', 'Error');
+    }
+  }
+
+  const isNetworkError = (error: { code: string }): boolean => {
+    return ['ECONNRESET', 'ETIMEDOUT'].includes(error.code);
+  }
+
+  const isAccessError = (error: { code: string }): boolean => {
+    return ['EACCES', 'EISDIR'].includes(error.code);
+  }
+
+  const isCssFile = (fileName: string): boolean => {
+    return fileName.endsWith('.css');
+  }
+
+  const processCssFile = async (fileOptions: FileOptions): Promise<void> => {
+    const { absoluteAssetUrl, fileName } = fileOptions;
+
+    if (isCssFile(fileName)) {
+      await extractAssets(absoluteAssetUrl, { basePath, saveFile: false });
+    }
+  }
+
+  const downloadAssetWithRetryCallback = async (fileOptions: FileOptions) => {
+    saveHtmlFile(fileOptions);
+    saveAsset(fileOptions);
+    await processCssFile(fileOptions);
+  }
+
+  const parseFileNameFromUrlCallback = async (fileOptions: FileOptions): Promise<void> => {
+    const { absoluteAssetUrl, fileNameGuess, destinationPath } = fileOptions;
+
+    await downloadAssetWithRetry(absoluteAssetUrl, fileNameGuess,
+      async (responseData: string, fileName: string) => {
+        await downloadAssetWithRetryCallback({ ...fileOptions, fileName, responseData, destinationFilePath: formDestinationFilePath(destinationPath, fileName) });
+      }
+    );
+  }
+
+  const parseMatchError = (error: any, absoluteAssetUrl: string): void => {
+    const { message } = error;
+
+    if (isNetworkError(error)) {
+      logMessage(`Network error occurred while downloading asset from ${absoluteAssetUrl}: ${message}.`, 'error', 'Error');
+    } else if (isAccessError(error)) {
+      logMessage(`Error saving asset. Permission denied or target path is a directory.`, 'error', 'Error');
+    } else {
+      logMessage(`Error downloading asset from ${absoluteAssetUrl}: ${message}.`, 'error', 'Error');
+    }
+  }
+
+  const processMatch = async (fileOptions: FileOptions) => {
+    const { absoluteAssetUrl, destinationPath } = fileOptions;
+    
+    mkdirRecursive(destinationPath);
+    await parseFileNameFromUrl(absoluteAssetUrl, async (fileNameGuess: string) => {
+      await parseFileNameFromUrlCallback({...fileOptions, fileNameGuess});
+    });
+  }
+
+  const processParsedUrl = async (parsedUrl: string): Promise<void> => {
+    const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl);
+
+    try {
+      await processMatch({ 
+        parsedUrl, 
+        absoluteAssetUrl, 
+        destinationPath: formDestinationPath(parsedUrl) 
+      });
+    } catch (error) {
+      parseMatchError(error, absoluteAssetUrl);
+    }
+  }
+
+  const processMatches = async (matches: string[]): Promise<void> => {
+    for (const parsedUrl of matches) {
+      await processParsedUrl(parsedUrl);
+    };
+  }
+
+  const performHtmlReplacements = (): string => {
+    return htmlString.replace(/srcset="(.*?)"/gi, '').replace(/sizes="(.*?)"/gi, '').replace(new RegExp(userInput, 'g'), '');
+  }
+
+  const parseUrls = (): any => {
+    return [...[...htmlString.matchAll(/((<link(.*?)(rel="stylesheet"|rel='stylesheet'))(.*?)(href="|href=\')|((img|script|source)(.*?)(src="|src=\')))(.*?\..*?)("|\')/gi)].map(match => match ? match[11] : ''), ...[...htmlString.matchAll(/url\((.*?)\)/gi)].map(match =>  match ? match[1].replace(/\'|"/g, '') : '')].filter(url => !url.startsWith('data:'));
+  }
+
+  const isValidInput = (): boolean => {
+    return typeof userInput !== 'string' || typeof basePath !== 'string';
+  }
+
+  const processUrl = async () => {
+    const { data } = await axios.get(appendForwardSlash());
+    htmlString = data;
+    logMessage('Fetching content...', 'log', 'Progress');
+  }
+
+  const fetchData = async (): Promise<void> => {
+    try {
+      await processUrl();
+    } catch (error) {
+      logMessage(`Error fetching content from url: ${error.message}`, 'log', 'Error');
+    }
+  }
+
+  const shouldFetchData = (): boolean => {
+    return isUrl(userInput) && isUrlValid(userInput);
+  }
+
+  const modifyUserVars = () => {
+    htmlString = userInput;
+    userInput = source;
+  }
+
+  const processUserInput = async () => {
+    if (isValidInput()) {
+      logMessage('Invalid user input: source and basePath must be strings.', 'log', 'Error');
+    } else if (shouldFetchData()) {
+      await fetchData();
+    } else {
+      modifyUserVars();
+    }
+  }
+
+  const processHtmlString = async (): Promise<void> => {
+    await processUserInput();
+    performHtmlReplacements();
+    await processMatches(parseUrls());
+  }
+
+  await processHtmlString();
 
   return htmlString;
 }
+
+export default extractAssets;
