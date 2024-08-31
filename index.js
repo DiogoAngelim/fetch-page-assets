@@ -80,7 +80,10 @@ export default async function extractAssets(userInput, options = {}) {
       i++;
     }
     parts.shift();
-    return `${options.protocol}://${parts.join('/')}/${url[length - 1]}`;
+    const output = `${options.protocol}://${parts.join('/')}/${
+      url[length - 1]
+    }`;
+    return output.replace('https:///', 'https://');
   }
   function formAssetAbsoluteUrl(url, userInput) {
     let newUserInput = userInput;
@@ -239,6 +242,7 @@ export default async function extractAssets(userInput, options = {}) {
   }
   async function processCssFile(fileName, absoluteAssetUrl) {
     if (fileName.endsWith('.css')) {
+      console.log(absoluteAssetUrl);
       await extractAssets(absoluteAssetUrl, {
         ...options,
         basePath: options.basePath,
@@ -247,7 +251,8 @@ export default async function extractAssets(userInput, options = {}) {
     }
   }
   async function processMatches(matches) {
-    for (const parsedUrl of matches) {
+    if (matches?.length) {
+      for (const parsedUrl of matches) {
       const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl, userInput);
       const destinationPath = formDestinationPath(absoluteAssetUrl);
       try {
@@ -290,6 +295,7 @@ export default async function extractAssets(userInput, options = {}) {
           );
         }
       }
+    }
     }
     return htmlString;
   }
