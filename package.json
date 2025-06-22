@@ -1,6 +1,6 @@
 {
   "name": "fetch-page-assets",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "type": "module",
   "description": "A versatile Node.js module for extracting assets (such as CSS files, JavaScript files, fonts, and images) from HTML content or URL.",
   "types": "index.ts",
@@ -26,6 +26,7 @@
   ],
   "author": "Diogo Angelim",
   "license": "MIT",
+  "funding": "https://www.paypal.com/donate/?hosted_button_id=XA5LN4XR39PMQ",
   "bugs": {
     "url": "https://github.com/DiogoAngelim/fetch-page-assets/issues"
   },
@@ -37,5 +38,8 @@
     "html-entities": "^2.5.2",
     "mime": "^4.0.3",
     "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.5"
   }
 }

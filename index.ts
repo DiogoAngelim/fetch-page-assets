@@ -16,30 +16,30 @@ interface Options {
   maxRetryAttempts?: number,
 }
 
-interface FileOptions { 
+interface FileOptions {
   parsedUrl: string,
   destinationPath?: string,
   fileName?: string,
   responseData?: string,
   fileNameGuess?: string,
-  absoluteAssetUrl?: string, 
+  absoluteAssetUrl?: string,
   destinationFilePath?: string,
-  
+
 }
 
 type CallbackFunction = (data: string, fileName: string) => Promise<any>;
 
-const extractAssets = async (userInput: string, options: Options = { 
+const extractAssets = async (userInput: string, options: Options = {
   saveFile: true,
   verbose: true,
-  }): Promise<string> => {
-  let { 
-    basePath, 
-    source, 
-    protocol, 
-    maxRetryAttempts, 
-    retryDelay, 
-    verbose, 
+}): Promise<string> => {
+  let {
+    basePath,
+    source,
+    protocol,
+    maxRetryAttempts,
+    retryDelay,
+    verbose,
     saveFile,
   } = options;
 
@@ -51,9 +51,15 @@ const extractAssets = async (userInput: string, options: Options = {
 
   let htmlString = '';
 
-  const logMessage = (message: string, func: string, type: string): void => {
+  const logError = (message: string): void => {
     if (verbose) {
-      console[func](`${type} ${message}`);
+      console.error(`[Error] ${message}`);
+    }
+  }
+
+  const logSuccess = (message: string): void => {
+    if (verbose) {
+      console.log(`[Success] ${message}`);
     }
   }
 
@@ -74,7 +80,7 @@ const extractAssets = async (userInput: string, options: Options = {
   }
 
   const isProtocolInvalid = (protocol: string): boolean => {
-    return !['http', 'https'].includes(protocol);
+    return !['http:', 'https:'].includes(protocol);
   }
 
   const checkProtocol = (protocol: string): void => {
@@ -102,7 +108,7 @@ const extractAssets = async (userInput: string, options: Options = {
     try {
       return checkUrl(url);
     } catch (error) {
-      logMessage(error, 'error', 'Error');
+      logError(error);
       return false;
     }
   }
@@ -134,7 +140,7 @@ const extractAssets = async (userInput: string, options: Options = {
 
   const formPathWithDots = (url: string): string => {
     const { urlLength, parts } = processPath(url);
-    
+
     return `${protocol}://${setParts(parts, urlLength)}/${url[urlLength - 1]}`;
   }
 
@@ -154,7 +160,7 @@ const extractAssets = async (userInput: string, options: Options = {
 
   const parseUserInput = (url: string): string => {
     handleDuplicateSlashes(url);
-    
+
     return url.includes('../') ? formPathWithDots(url) : joinPath([userInput.replace(path.basename(userInput), ''), url]);
   }
 
@@ -197,9 +203,9 @@ const extractAssets = async (userInput: string, options: Options = {
 
   const directoryCreationCallback = (error: { message: string }, destinationPath: string): void => {
     if (error) {
-      logMessage(`Error creating directory ${destinationPath}: ${error.message}`, 'error', 'Error');
+      logError(`Error creating directory ${destinationPath}: ${error.message}`);
     } else {
-      logMessage(`Directory created: ${destinationPath}`, 'log', 'Success');
+      logSuccess(`Directory created: ${destinationPath}`);
     }
   }
 
@@ -218,7 +224,7 @@ const extractAssets = async (userInput: string, options: Options = {
     const fileName = urlObject?.href ? urlObject.href.match(/([%2F|\/](?:.(?!%2F|\/))+$)/g) : null;
     const fileName2 = fileName?.length ? fileName[0].replace(/\/|%2F/, '') : null;
     const fileName3 = fileName2 ? fileName2.match(/^(.*?)(\.[^.]*)?$/) : null;
-    const m2 = fileName2? fileName2.match(/([\/.\w]+)([.][\w]+)([?][\w.\/=]+)?/) : null;
+    const m2 = fileName2 ? fileName2.match(/([\/.\w]+)([.][\w]+)([?][\w.\/=]+)?/) : null;
 
     await callback(fileName2 && fileName3 && fileName3.length && m2 ? fileName3[1] + m2[2] : urlObject.pathname);
   }
@@ -241,7 +247,7 @@ const extractAssets = async (userInput: string, options: Options = {
   function replaceHtmlWithRelativeUrls(fileOptions: FileOptions): void {
     const { parsedUrl, destinationFilePath } = fileOptions;
     const { origin } = new URL(parsedUrl);
-    
+
 
     htmlString = htmlString.replace(origin, '').replace(parsedUrl.replace(origin, ''), destinationFilePath.replace(`${basePath.replace('../', '').replace('./', '')}/`, ''));
   }
@@ -287,22 +293,22 @@ const extractAssets = async (userInput: string, options: Options = {
     const progress = loaded && total ? Math.round((loaded / total) * 100) : 0;
 
     if (!isNaN(progress)) {
-      logMessage(`Download progress: ${progress}%`, 'log', 'Progress');
+      console.log(`Download progress: ${progress}%`);
     }
   }
 
   const getData = async (url: string, fileNameGuess: string, callback: CallbackFunction): Promise<string> => {
     const { headers, data }: AxiosResponse<any> = await axios.get<string>(decode(url), { responseType: 'arraybuffer', onDownloadProgress });
-    
+
     await callback(data, formFileName(headers, fileNameGuess));
 
     return data;
   }
 
   const retry = async (url: string, retryAttempts: number): Promise<void> => {
-    logMessage(`Retrying asset download for ${url} (Attempt ${retryAttempts + 1}/${maxRetryAttempts})...`, 'log', 'Progress');
+    console.log(`Retrying asset download for ${url} (Attempt ${retryAttempts + 1}/${maxRetryAttempts})...`);
 
-    await new Promise((resolve) => { 
+    await new Promise((resolve) => {
       setTimeout(resolve, retryDelay);
     });
   }
@@ -315,19 +321,19 @@ const extractAssets = async (userInput: string, options: Options = {
     let retryAttempts = 0;
 
     while (retryAttempts < maxRetryAttempts) {
-      try {        
-        await getData(url, fileNameGuess, async (data, fileName) =>  data ? await callback(data, fileName) : null);
+      try {
+        await getData(url, fileNameGuess, async (data, fileName) => data ? await callback(data, fileName) : null);
 
         break;
       } catch (error) {
         const { message, code } = error;
 
-        logMessage(`Error downloading asset from ${url}: ${message}`, 'error', 'Error');
+        logError(`Error downloading asset from ${url}: ${message}`);
 
         if (retrialError(code, retryAttempts)) {
           break;
         } else {
-          await retry(url,retryAttempts);
+          await retry(url, retryAttempts);
           retryAttempts++;
         }
       }
@@ -336,21 +342,21 @@ const extractAssets = async (userInput: string, options: Options = {
 
   const checkForFileSaveSuccess = (destinationFilePath: string): void => {
     if (fs.existsSync(destinationFilePath)) {
-      logMessage(`Asset saved successfully to ${destinationFilePath}`, 'log', 'Success');
+      logSuccess(`Asset saved successfully to ${destinationFilePath}`);
     } else {
-      logMessage(`Failed to save asset (${destinationFilePath}).`, 'error', 'Error');
+      logError(`Failed to save asset (${destinationFilePath}).`);
     }
   }
 
   const saveAsset = (fileOptions: FileOptions): void => {
     const { responseData, destinationFilePath } = fileOptions;
-    
+
     try {
       fs.writeFileSync(destinationFilePath, responseData, 'utf8');
 
       checkForFileSaveSuccess(destinationFilePath);
     } catch (error) {
-      logMessage(`Error saving asset to ${destinationFilePath}: ${error.message}`, 'error', 'Error');
+      logError(`Error saving asset to ${destinationFilePath}: ${error.message}`);
     }
   }
 
@@ -394,20 +400,20 @@ const extractAssets = async (userInput: string, options: Options = {
     const { message } = error;
 
     if (isNetworkError(error)) {
-      logMessage(`Network error occurred while downloading asset from ${absoluteAssetUrl}: ${message}.`, 'error', 'Error');
+      logError(`Network error occurred while downloading asset from ${absoluteAssetUrl}: ${message}.`);
     } else if (isAccessError(error)) {
-      logMessage(`Error saving asset. Permission denied or target path is a directory.`, 'error', 'Error');
+      logError(`Error saving asset. Permission denied or target path is a directory.`);
     } else {
-      logMessage(`Error downloading asset from ${absoluteAssetUrl}: ${message}.`, 'error', 'Error');
+      logError(`Error downloading asset from ${absoluteAssetUrl}: ${message}.`);
     }
   }
 
   const processMatch = async (fileOptions: FileOptions) => {
     const { absoluteAssetUrl, destinationPath } = fileOptions;
-    
+
     mkdirRecursive(destinationPath);
     await parseFileNameFromUrl(absoluteAssetUrl, async (fileNameGuess: string) => {
-      await parseFileNameFromUrlCallback({...fileOptions, fileNameGuess});
+      await parseFileNameFromUrlCallback({ ...fileOptions, fileNameGuess });
     });
   }
 
@@ -415,10 +421,10 @@ const extractAssets = async (userInput: string, options: Options = {
     const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl);
 
     try {
-      await processMatch({ 
-        parsedUrl, 
-        absoluteAssetUrl, 
-        destinationPath: formDestinationPath(parsedUrl) 
+      await processMatch({
+        parsedUrl,
+        absoluteAssetUrl,
+        destinationPath: formDestinationPath(parsedUrl)
       });
     } catch (error) {
       parseMatchError(error, absoluteAssetUrl);
@@ -436,7 +442,7 @@ const extractAssets = async (userInput: string, options: Options = {
   }
 
   const parseUrls = (): any => {
-    return [...[...htmlString.matchAll(/((<link(.*?)(rel="stylesheet"|rel='stylesheet'))(.*?)(href="|href=\')|((img|script|source)(.*?)(src="|src=\')))(.*?\..*?)("|\')/gi)].map(match => match ? match[11] : ''), ...[...htmlString.matchAll(/url\((.*?)\)/gi)].map(match =>  match ? match[1].replace(/\'|"/g, '') : '')].filter(url => !url.startsWith('data:'));
+    return [...[...htmlString.matchAll(/((<link(.*?)(rel="stylesheet"|rel='stylesheet'))(.*?)(href="|href=\')|((img|script|source)(.*?)(src="|src=\')))(.*?\..*?)("|\')/gi)].map(match => match ? match[11] : ''), ...[...htmlString.matchAll(/url\((.*?)\)/gi)].map(match => match ? match[1].replace(/\'|"/g, '') : '')].filter(url => !url.startsWith('data:'));
   }
 
   const isValidInput = (): boolean => {
@@ -446,14 +452,14 @@ const extractAssets = async (userInput: string, options: Options = {
   const processUrl = async () => {
     const { data } = await axios.get(appendForwardSlash());
     htmlString = data;
-    logMessage('Fetching content...', 'log', 'Progress');
+    console.log('Fetching content...');
   }
 
   const fetchData = async (): Promise<void> => {
     try {
       await processUrl();
     } catch (error) {
-      logMessage(`Error fetching content from url: ${error.message}`, 'log', 'Error');
+      logError(`Error fetching content from url: ${error.message}`);
     }
   }
 
@@ -468,7 +474,7 @@ const extractAssets = async (userInput: string, options: Options = {
 
   const processUserInput = async () => {
     if (isValidInput()) {
-      logMessage('Invalid user input: source and basePath must be strings.', 'log', 'Error');
+      logError('Invalid user input: source and basePath must be strings.');
     } else if (shouldFetchData()) {
       await fetchData();
     } else {
