@@ -1,6 +1,6 @@
 {
   "name": "fetch-page-assets",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "type": "module",
   "description": "A versatile Node.js module for extracting assets (such as CSS files, JavaScript files, fonts, and images) from HTML content or URLs.",
   "types": "index.ts",
@@ -41,7 +41,12 @@
     "path": "^0.12.7"
   },
   "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.10.0",
+    "babel-jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "typescript": "^5.9.3"
   }
 }
