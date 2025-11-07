@@ -1,496 +1,288 @@
-import axios, { AxiosResponse, AxiosProgressEvent } from 'axios';
-import fs from 'fs';
-import path from 'path';
-import beautify from 'beautify';
-import { decode } from 'html-entities';
-import mime from 'mime';
 
-interface Options {
-  basePath?: string,
-  source?: string,
-  saveFile?: boolean,
-  protocol?: string,
-  verbose?: boolean,
-  parseCss?: boolean,
-  retryDelay?: number,
-  maxRetryAttempts?: number,
-}
 
-interface FileOptions {
-  parsedUrl: string,
-  destinationPath?: string,
-  fileName?: string,
-  responseData?: string,
-  fileNameGuess?: string,
-  absoluteAssetUrl?: string,
-  destinationFilePath?: string,
 
-}
+import axios from "axios";
+import fs from "fs";
+import path from "path";
+import { decode } from "html-entities";
+import mime from "mime";
+import type { ExtractAssetsOptions, AssetTask } from "./types.d";
 
-type CallbackFunction = (data: string, fileName: string) => Promise<any>;
-
-const extractAssets = async (userInput: string, options: Options = {
-  saveFile: true,
-  verbose: true,
-}): Promise<string> => {
+const extractAssets = async (t: string, e: ExtractAssetsOptions = { saveFile: true, verbose: true }): Promise<string> => {
   let {
-    basePath,
-    source,
-    protocol,
-    maxRetryAttempts,
-    retryDelay,
-    verbose,
-    saveFile,
-  } = options;
+    basePath: s,
+    source: a,
+    protocol: r,
+    maxRetryAttempts: o,
+    retryDelay: n,
+    verbose: i,
+    saveFile: c
+  } = e;
 
-  source = source || '';
-  protocol = protocol || 'https';
-  retryDelay = retryDelay || 1000;
-  basePath = basePath || process.cwd();
-  maxRetryAttempts = maxRetryAttempts || 3;
+  a = a || "";
+  r = r || "https";
+  n = n || 1e3;
+  s = s || process.cwd();
+  o = o || 3;
 
-  let htmlString = '';
+  let l: string = "";
 
-  const logError = (message: string): void => {
-    if (verbose) {
-      console.error(`[Error] ${message}`);
-    }
-  }
 
-  const logSuccess = (message: string): void => {
-    if (verbose) {
-      console.log(`[Success] ${message}`);
-    }
-  }
+  // Type helpers
+  const h = (t: string): void => {
+    if (i) console.error(`[Error] ${t}`);
+  };
+  const p = (t: string): void => {
+    if (i) console.log(`[Success] ${t}`);
+  };
+  const d = (t: string): boolean => t.startsWith("//");
+  const m = (t: string): string => (d(t) ? `${r}:${t}` : t);
+  const u = (): boolean => t.endsWith("/");
+  const w = (t: string): boolean => !t.startsWith("http") && !d(t);
 
-  const isDynamicProtocol = (url: string) => {
-    return url.startsWith('//');
-  }
+  const $ = (e: string): string => e.trim().replace(/^['"]|['"]$/g, "");
 
-  const prependHttpProtocol = (url: string): string => {
-    return isDynamicProtocol(url) ? `${protocol}:${url}` : url;
-  }
-
-  const inputEndsWithSlash = () => {
-    return userInput.endsWith('/');
-  }
-
-  const appendForwardSlash = (): string => {
-    return inputEndsWithSlash() ? userInput : `${userInput}/`;
-  }
-
-  const isProtocolInvalid = (protocol: string): boolean => {
-    return !['http:', 'https:'].includes(protocol);
-  }
-
-  const checkProtocol = (protocol: string): void => {
-    if (isProtocolInvalid(protocol)) {
-      throw new Error('Invalid protocol in baseUrl. Only http and https protocols are supported.');
-    }
-  }
-
-  const checkHostName = (hostname: string) => {
-    if (!hostname) {
-      throw new Error('Invalid baseUrl. Please provide a valid URL with a hostname.');
-    }
-  }
-
-  const checkUrl = (url: string): boolean => {
-    const { protocol, hostname, href } = new URL(removeQueryParams(url));
-
-    checkProtocol(protocol);
-    checkHostName(hostname);
-
-    return !!href;
-  }
-
-  const isUrlValid = (url: string): boolean => {
+  const E = (relativePath: string): string => {
     try {
-      return checkUrl(url);
-    } catch (error) {
-      logError(error);
+      if (w(relativePath)) {
+        const cleanPath = $(relativePath);
+        const resolved = new URL(cleanPath, a);
+        return resolved.href;
+      }
+      return m(relativePath);
+    } catch (err: any) {
+      h(`Error resolving path: ${relativePath} — ${err.message}`);
+      return relativePath;
+    }
+  };
+
+  const g = (t: string[]): string => path.join(...t);
+
+  const U = (t: string): void => {
+    fs.mkdirSync(t, { recursive: true });
+    p(`Directory ensured: ${t}`);
+  };
+
+  const v = (t: AssetTask): void => {
+    if (c) {
+      const { parsedUrl: e, destinationFilePath: a } = t;
+      const { origin: r } = new URL(e);
+      const urlStr = e;
+      let relativeLocalPath = path.relative(s, a!).split(path.sep).join("/");
+
+      l = l.replaceAll(urlStr, relativeLocalPath);
+      l = l.replaceAll(`${r}${urlStr}`, relativeLocalPath);
+
+      fs.writeFileSync(path.join(s, "index.html"), l, "utf8");
+
+      p(`Updated HTML with local asset path for ${urlStr} -> ${relativeLocalPath}`);
+    }
+  };
+
+  const A = (t: string): string => t.split("?")[0].split("#")[0];
+  const F = (t: string, e: string): string => A(path.join(t, e));
+  const P = (t: any, e: string): any => t[e] || t[e.toLowerCase()];
+
+  const R = (headers: any, fallback: string): string => {
+    let filename = P(headers, "Content-Disposition")?.match(/filename="(.+?)"/)?.[1] || fallback;
+
+    filename = filename?.split("?")[0].split("#")[0]; // Remove query/hash
+    filename = filename.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+
+    const contentType = P(headers, "Content-Type");
+    const hasExt = filename.includes(".");
+
+    if (!hasExt && contentType) {
+      const ext = mime.getExtension(contentType);
+      if (ext) {
+        return `${filename}.${ext}`;
+      }
+    }
+
+    return filename;
+  };
+
+  const D = (t: { loaded?: number; total?: number }): void => {
+    const { loaded: e, total: s } = t;
+    const a = e && s ? Math.round((e / s) * 100) : 0;
+    if (!isNaN(a)) console.log(`Download progress: ${a}%`);
+  };
+
+  const N = async (url: string, e: string, saveFunc: (data: Buffer, meta: string) => Promise<void>): Promise<Buffer> => {
+    try {
+      const decodedUrl = decode(url);
+      console.log("Starting download for:", decodedUrl);
+
+      const { headers, data } = await axios.get(decodedUrl, {
+        responseType: "arraybuffer",
+        onDownloadProgress: D,
+      });
+
+      await saveFunc(data, R(headers, e));
+
+      return data;
+
+    } catch (error: any) {
+      console.error("Download or save failed:", error.message || error);
+      throw error;
+    }
+  };
+
+  const L = async (t: string, e: number): Promise<void> => {
+    console.log(`Retrying asset download for ${t} (Attempt ${e + 1}/${o})...`);
+    await new Promise((resolve) => {
+      setTimeout(resolve, n);
+    });
+  };
+
+  const S = (t: string, e: number): boolean => ["ERR_BAD_REQUEST", "ENOTFOUND"].includes(t) && e >= o - 1;
+
+  const T = (t: AssetTask): void => {
+    const { responseData: e, destinationFilePath: s } = t;
+    try {
+      const dir = path.dirname(s!);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        p(`Created directory: ${dir}`);
+      }
+      fs.writeFileSync(s!, e! as Uint8Array);
+      if (fs.existsSync(s!)) {
+        p(`Asset saved successfully to ${s}`);
+      } else {
+        h(`Failed to save asset (${s}).`);
+      }
+    } catch (err: any) {
+      h(`Error saving asset to ${s}: ${err.message}`);
+    }
+  };
+
+  const C = async (t: AssetTask): Promise<void> => {
+    v(t);
+    T(t);
+    await (async (t: AssetTask) => {
+      const { absoluteAssetUrl: e, fileName: a } = t;
+      if (a && a.endsWith(".css")) {
+        await extractAssets(e, { basePath: s, saveFile: false });
+      }
+    })(t);
+  };
+
+  const I = async (t: AssetTask): Promise<void> => {
+    const { absoluteAssetUrl: e, fileNameGuess: s, destinationPath: a } = t;
+    await (async (t: string, e: string, s: (data: Buffer, meta: string) => Promise<void>) => {
+      let a = 0;
+      for (; a < o;) {
+        try {
+          await N(t, e, async (data, meta) => {
+            if (data) {
+              await s(data, meta);
+            }
+          });
+          break;
+        } catch (e: any) {
+          const { message: s, code: r } = e;
+          h(`Error downloading asset from ${t}: ${s}`);
+          if (S(r, a)) break;
+          await L(t, a);
+          a++;
+        }
+      }
+    })(e, s!, async (e, s) => {
+      await C({ ...t, fileName: s, responseData: e, destinationFilePath: F(a, s) });
+    });
+  };
+
+  const W = async (t: AssetTask): Promise<void> => {
+    const { absoluteAssetUrl: e, destinationPath: s } = t;
+    U(s);
+    const parsed = new URL(e);
+    const pathParts = parsed.pathname.split("/").filter(Boolean);
+    const lastPart = pathParts.pop();
+    const cleanName = lastPart ? decodeURIComponent(lastPart.split("?")[0]) : "asset";
+    await I({ ...t, fileNameGuess: cleanName });
+  };
+
+  const k = async (t: string): Promise<void> => {
+    const e = E(t);
+    try {
+      await W({ parsedUrl: t, absoluteAssetUrl: e, destinationPath: path.join(s, "assets") });
+    } catch (t: any) {
+      const { message: s, code: a } = t;
+      if (["ECONNRESET", "ETIMEDOUT"].includes(a)) {
+        h(`Network error occurred while downloading asset from ${e}: ${s}.`);
+      } else if (["EACCES", "EISDIR"].includes(a)) {
+        h("Error saving asset. Permission denied or target path is a directory.");
+      } else {
+        h(`Error downloading asset from ${e}: ${s}.`);
+      }
+    }
+  };
+
+  const O = async (): Promise<void> => {
+    const { data: e } = await axios.get(u() ? t : `${t}/`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*",
+      },
+      responseType: "arraybuffer"
+    });
+    l = e.toString("utf-8");
+    console.log("Fetching content...");
+  };
+
+  const j = (): boolean => {
+    if (!b(t)) return false;
+    try {
+      return f(t);
+    } catch (t: any) {
+      h(t);
       return false;
     }
-  }
+  };
 
-  const willFormDuplicateSlashes = (url: string): boolean => {
-    return inputEndsWithSlash() && url.startsWith('/');
-  }
+  const f = (t: string): boolean => {
+    const { protocol: e, hostname: s, href: a } = new URL(A(t));
+    if (!e || !["http:", "https:"].includes(e)) throw new Error("Invalid protocol in baseUrl. Only http and https are supported.");
+    if (!s) throw new Error("Invalid baseUrl. Provide a valid URL with a hostname.");
+    return !!a;
+  };
 
-  const isRelativeUrl = (url: string): boolean => {
-    return !url.startsWith('http') && !isDynamicProtocol(url);
-  }
-
-  const processPath = (url: string): { urlLength: number, parts: string[] } => {
-    return { urlLength: url.split('../').length, parts: userInput.split('/') };
-  }
-
-  const setParts = (parts: string[], urlLength: number): string => {
-    let i = 0;
-
-    while (i <= urlLength && parts.length) {
-      parts.pop();
-      i++;
-    }
-
-    parts.shift();
-
-    return parts.join('/');
-  }
-
-  const formPathWithDots = (url: string): string => {
-    const { urlLength, parts } = processPath(url);
-
-    return `${protocol}://${setParts(parts, urlLength)}/${url[urlLength - 1]}`;
-  }
-
-  const joinPath = (paths: string[]): string => {
-    return path.join(...paths);
-  }
-
-  const removeForwardSlash = (): void => {
-    userInput.slice(0, -1);
-  }
-
-  const handleDuplicateSlashes = (url: string): void => {
-    if (willFormDuplicateSlashes(url)) {
-      removeForwardSlash();
-    }
-  }
-
-  const parseUserInput = (url: string): string => {
-    handleDuplicateSlashes(url);
-
-    return url.includes('../') ? formPathWithDots(url) : joinPath([userInput.replace(path.basename(userInput), ''), url]);
-  }
-
-  const formAssetAbsoluteUrl = (url: string): string => {
-    return isRelativeUrl(url) ? parseUserInput(url) : prependHttpProtocol(url);
-  }
-
-  const handleCssFileInput = (): void => {
-    userInput = path.extname(userInput).startsWith('.css') ? userInput.replace(path.basename(userInput), '') : userInput;
-  }
-
-  const isUrl = (string: string): boolean => {
+  const b = (t: string): boolean => {
     try {
-      return !!new URL(prependHttpProtocol(string));
+      return !!new URL(m(t));
     } catch {
       return false;
     }
-  }
+  };
 
-  const handleRelativeUrl = (parsedUrl: string): string => {
-    handleDuplicateSlashes(parsedUrl);
-    handleCssFileInput();
-
-    return joinPath([userInput, parsedUrl]);
-  }
-
-  const getAssetRemotePath = (parsedUrl: string): string => {
-    if (isUrl(parsedUrl)) {
-      return new URL(parsedUrl).pathname;
-    } else if (isRelativeUrl(parsedUrl)) {
-      return handleRelativeUrl(parsedUrl);
+  const G = async (): Promise<void> => {
+    if (typeof t !== "string" || typeof s !== "string") {
+      h("Invalid user input: source and basePath must be strings.");
+      return;
+    }
+    if (j()) {
+      await O();
     } else {
-      return parsedUrl;
+      l = t;
+      t = a!;
     }
-  }
+  };
 
-  const formDestinationPath = (parsedUrl: string): string => {
-    return joinPath([basePath, getAssetRemotePath(prependHttpProtocol(parsedUrl))]).replace(/\/[^\/]*$/, '');
-  }
+  await G();
+  l = l.replace(/srcset="(.*?)"/gi, "").replace(/sizes="(.*?)"/gi, "").replace(new RegExp(t, "g"), "");
 
-  const directoryCreationCallback = (error: { message: string }, destinationPath: string): void => {
-    if (error) {
-      logError(`Error creating directory ${destinationPath}: ${error.message}`);
-    } else {
-      logSuccess(`Directory created: ${destinationPath}`);
-    }
-  }
+  const regex = /(<link[^>]+rel=["']stylesheet["'][^>]+href=["'])([^"']+\.[^"']+)["']|<(img|script|source)[^>]+src=["']([^"']+\.[^"']+)["']/gi;
 
-  const createDirectory = (destinationPath: string): void => {
-    fs.mkdir(destinationPath, { recursive: true }, (error: any): void => {
-      directoryCreationCallback(error, destinationPath);
-    });
-  }
+  const matches: string[] = [
+    ...[...l.matchAll(regex)].map(m => m[2] || m[4] || ""),
+    ...[...l.matchAll(/url\(["']?(.*?)["']?\)/gi)]
+      .map(m => m[1])
+      .filter(url => !/^#/.test(url))
+  ].filter(m => !!m && !m.startsWith("data:"));
 
-  const mkdirRecursive = (destinationPath: string): void => {
-    createDirectory(destinationPath);
-  }
+  for (const asset of matches) await k(asset);
 
-  const parseFileNameFromUrl = async (absoluteUrl: string, callback: CallableFunction): Promise<void> => {
-    const urlObject = new URL(absoluteUrl);
-    const fileName = urlObject?.href ? urlObject.href.match(/([%2F|\/](?:.(?!%2F|\/))+$)/g) : null;
-    const fileName2 = fileName?.length ? fileName[0].replace(/\/|%2F/, '') : null;
-    const fileName3 = fileName2 ? fileName2.match(/^(.*?)(\.[^.]*)?$/) : null;
-    const m2 = fileName2 ? fileName2.match(/([\/.\w]+)([.][\w]+)([?][\w.\/=]+)?/) : null;
-
-    await callback(fileName2 && fileName3 && fileName3.length && m2 ? fileName3[1] + m2[2] : urlObject.pathname);
-  }
-
-  const saveHtmlFile = (fileOptions: FileOptions): void => {
-    if (saveFile) {
-      replaceHtmlWithRelativeUrls(fileOptions);
-      fs.writeFileSync(joinPath([basePath, 'index.html']), beautify(htmlString, { format: 'html' }), 'utf8');
-    }
-  }
-
-  const removeQueryParams = (url: string): string => {
-    return url.split('?')[0].split('#')[0];
-  }
-
-  const formDestinationFilePath = (destinationPath: string, fileName: string): string => {
-    return removeQueryParams(joinPath([destinationPath, fileName]));
-  }
-
-  function replaceHtmlWithRelativeUrls(fileOptions: FileOptions): void {
-    const { parsedUrl, destinationFilePath } = fileOptions;
-    const { origin } = new URL(parsedUrl);
-
-
-    htmlString = htmlString.replace(origin, '').replace(parsedUrl.replace(origin, ''), destinationFilePath.replace(`${basePath.replace('../', '').replace('./', '')}/`, ''));
-  }
-
-  const splitDots = (fileName: string): string[] => {
-    return fileName.split('.');
-  }
-
-  const hasExtension = (fileName: string): boolean => {
-    return splitDots(fileName).length > 1;
-  }
-
-  const getExtension = (mimeType: string, fileName: string): string => {
-    const components = splitDots(fileName);
-
-    return mime.getExtension(mimeType) || components[components.length - 1];
-  }
-
-  const getHeader = (headers: string[], name: string): string => {
-    return headers[name] || headers[name.toLowerCase()];
-  }
-
-  const getFileNameFromHeaders = (headers: string[]): any => {
-    return (getHeader(headers, 'Content-Disposition'))?.match(/filename="(.*)"/);
-  }
-
-  const getMimeTypeFromHeaders = (headers: string[]): string => {
-    return getHeader(headers, 'Content-Type');
-  }
-
-  const formFileName = (headers: any, fileNameGuess: string): string => {
-    let fileName = getFileNameFromHeaders(headers);
-    fileName = fileName ? fileName[1] : fileNameGuess;
-    fileName = fileName?.split('?')[0];
-
-    const mimeType = getMimeTypeFromHeaders(headers);
-
-    return !hasExtension(fileName) && mimeType ? `${fileName}.${getExtension(mimeType, fileName)}` : fileName;
-  }
-
-  const onDownloadProgress = (progressEvent: AxiosProgressEvent): void => {
-    const { loaded, total }: AxiosProgressEvent = progressEvent;
-    const progress = loaded && total ? Math.round((loaded / total) * 100) : 0;
-
-    if (!isNaN(progress)) {
-      console.log(`Download progress: ${progress}%`);
-    }
-  }
-
-  const getData = async (url: string, fileNameGuess: string, callback: CallbackFunction): Promise<string> => {
-    const { headers, data }: AxiosResponse<any> = await axios.get<string>(decode(url), { responseType: 'arraybuffer', onDownloadProgress });
-
-    await callback(data, formFileName(headers, fileNameGuess));
-
-    return data;
-  }
-
-  const retry = async (url: string, retryAttempts: number): Promise<void> => {
-    console.log(`Retrying asset download for ${url} (Attempt ${retryAttempts + 1}/${maxRetryAttempts})...`);
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, retryDelay);
-    });
-  }
-
-  const retrialError = (code: string, retryAttempts: number) => {
-    return ['ERR_BAD_REQUEST', 'ENOTFOUND'].includes(code) && retryAttempts >= maxRetryAttempts - 1;
-  }
-
-  const downloadAssetWithRetry = async (url: string, fileNameGuess: string, callback: CallableFunction): Promise<void> => {
-    let retryAttempts = 0;
-
-    while (retryAttempts < maxRetryAttempts) {
-      try {
-        await getData(url, fileNameGuess, async (data, fileName) => data ? await callback(data, fileName) : null);
-
-        break;
-      } catch (error) {
-        const { message, code } = error;
-
-        logError(`Error downloading asset from ${url}: ${message}`);
-
-        if (retrialError(code, retryAttempts)) {
-          break;
-        } else {
-          await retry(url, retryAttempts);
-          retryAttempts++;
-        }
-      }
-    }
-  }
-
-  const checkForFileSaveSuccess = (destinationFilePath: string): void => {
-    if (fs.existsSync(destinationFilePath)) {
-      logSuccess(`Asset saved successfully to ${destinationFilePath}`);
-    } else {
-      logError(`Failed to save asset (${destinationFilePath}).`);
-    }
-  }
-
-  const saveAsset = (fileOptions: FileOptions): void => {
-    const { responseData, destinationFilePath } = fileOptions;
-
-    try {
-      fs.writeFileSync(destinationFilePath, responseData, 'utf8');
-
-      checkForFileSaveSuccess(destinationFilePath);
-    } catch (error) {
-      logError(`Error saving asset to ${destinationFilePath}: ${error.message}`);
-    }
-  }
-
-  const isNetworkError = (error: { code: string }): boolean => {
-    return ['ECONNRESET', 'ETIMEDOUT'].includes(error.code);
-  }
-
-  const isAccessError = (error: { code: string }): boolean => {
-    return ['EACCES', 'EISDIR'].includes(error.code);
-  }
-
-  const isCssFile = (fileName: string): boolean => {
-    return fileName.endsWith('.css');
-  }
-
-  const processCssFile = async (fileOptions: FileOptions): Promise<void> => {
-    const { absoluteAssetUrl, fileName } = fileOptions;
-
-    if (isCssFile(fileName)) {
-      await extractAssets(absoluteAssetUrl, { basePath, saveFile: false });
-    }
-  }
-
-  const downloadAssetWithRetryCallback = async (fileOptions: FileOptions) => {
-    saveHtmlFile(fileOptions);
-    saveAsset(fileOptions);
-    await processCssFile(fileOptions);
-  }
-
-  const parseFileNameFromUrlCallback = async (fileOptions: FileOptions): Promise<void> => {
-    const { absoluteAssetUrl, fileNameGuess, destinationPath } = fileOptions;
-
-    await downloadAssetWithRetry(absoluteAssetUrl, fileNameGuess,
-      async (responseData: string, fileName: string) => {
-        await downloadAssetWithRetryCallback({ ...fileOptions, fileName, responseData, destinationFilePath: formDestinationFilePath(destinationPath, fileName) });
-      }
-    );
-  }
-
-  const parseMatchError = (error: any, absoluteAssetUrl: string): void => {
-    const { message } = error;
-
-    if (isNetworkError(error)) {
-      logError(`Network error occurred while downloading asset from ${absoluteAssetUrl}: ${message}.`);
-    } else if (isAccessError(error)) {
-      logError(`Error saving asset. Permission denied or target path is a directory.`);
-    } else {
-      logError(`Error downloading asset from ${absoluteAssetUrl}: ${message}.`);
-    }
-  }
-
-  const processMatch = async (fileOptions: FileOptions) => {
-    const { absoluteAssetUrl, destinationPath } = fileOptions;
-
-    mkdirRecursive(destinationPath);
-    await parseFileNameFromUrl(absoluteAssetUrl, async (fileNameGuess: string) => {
-      await parseFileNameFromUrlCallback({ ...fileOptions, fileNameGuess });
-    });
-  }
-
-  const processParsedUrl = async (parsedUrl: string): Promise<void> => {
-    const absoluteAssetUrl = formAssetAbsoluteUrl(parsedUrl);
-
-    try {
-      await processMatch({
-        parsedUrl,
-        absoluteAssetUrl,
-        destinationPath: formDestinationPath(parsedUrl)
-      });
-    } catch (error) {
-      parseMatchError(error, absoluteAssetUrl);
-    }
-  }
-
-  const processMatches = async (matches: string[]): Promise<void> => {
-    for (const parsedUrl of matches) {
-      await processParsedUrl(parsedUrl);
-    };
-  }
-
-  const performHtmlReplacements = (): string => {
-    return htmlString.replace(/srcset="(.*?)"/gi, '').replace(/sizes="(.*?)"/gi, '').replace(new RegExp(userInput, 'g'), '');
-  }
-
-  const parseUrls = (): any => {
-    return [...[...htmlString.matchAll(/((<link(.*?)(rel="stylesheet"|rel='stylesheet'))(.*?)(href="|href=\')|((img|script|source)(.*?)(src="|src=\')))(.*?\..*?)("|\')/gi)].map(match => match ? match[11] : ''), ...[...htmlString.matchAll(/url\((.*?)\)/gi)].map(match => match ? match[1].replace(/\'|"/g, '') : '')].filter(url => !url.startsWith('data:'));
-  }
-
-  const isValidInput = (): boolean => {
-    return typeof userInput !== 'string' || typeof basePath !== 'string';
-  }
-
-  const processUrl = async () => {
-    const { data } = await axios.get(appendForwardSlash());
-    htmlString = data;
-    console.log('Fetching content...');
-  }
-
-  const fetchData = async (): Promise<void> => {
-    try {
-      await processUrl();
-    } catch (error) {
-      logError(`Error fetching content from url: ${error.message}`);
-    }
-  }
-
-  const shouldFetchData = (): boolean => {
-    return isUrl(userInput) && isUrlValid(userInput);
-  }
-
-  const modifyUserVars = () => {
-    htmlString = userInput;
-    userInput = source;
-  }
-
-  const processUserInput = async () => {
-    if (isValidInput()) {
-      logError('Invalid user input: source and basePath must be strings.');
-    } else if (shouldFetchData()) {
-      await fetchData();
-    } else {
-      modifyUserVars();
-    }
-  }
-
-  const processHtmlString = async (): Promise<void> => {
-    await processUserInput();
-    performHtmlReplacements();
-    await processMatches(parseUrls());
-  }
-
-  await processHtmlString();
-
-  return htmlString;
-}
+  return l;
+};
 
 export default extractAssets;
