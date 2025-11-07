@@ -1,8 +1,8 @@
 {
   "name": "fetch-page-assets",
-  "version": "1.2.0",
+  "version": "1.2.3",
   "type": "module",
-  "description": "A versatile Node.js module for extracting assets (such as CSS files, JavaScript files, fonts, and images) from HTML content or URL.",
+  "description": "A versatile Node.js module for extracting assets (such as CSS files, JavaScript files, fonts, and images) from HTML content or URLs.",
   "types": "index.ts",
   "main": "index.js",
   "scripts": {
@@ -34,7 +34,6 @@
   },
   "homepage": "https://github.com/DiogoAngelim/fetch-page-assets#readme",
   "dependencies": {
-    "axios": "^1.6.8",
     "beautify": "^0.0.8",
     "fs": "^0.0.1-security",
     "html-entities": "^2.5.2",

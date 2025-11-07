@@ -1,7 +1,3 @@
-
-
-
-import axios from "axios";
 import fs from "fs";
 import path from "path";
 import { decode } from "html-entities";
@@ -113,14 +109,20 @@ const extractAssets = async (t: string, e: ExtractAssetsOptions = { saveFile: tr
       const decodedUrl = decode(url);
       console.log("Starting download for:", decodedUrl);
 
-      const { headers, data } = await axios.get(decodedUrl, {
-        responseType: "arraybuffer",
-        onDownloadProgress: D,
+      const response = await fetch(decodedUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch asset: ${response.status} ${response.statusText}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      // Convert Headers to plain object for compatibility
+      const headersObj: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        headersObj[key] = value;
       });
 
-      await saveFunc(data, R(headers, e));
+      await saveFunc(Buffer.from(arrayBuffer), R(headersObj, e));
 
-      return data;
+      return Buffer.from(arrayBuffer);
 
     } catch (error: any) {
       console.error("Download or save failed:", error.message || error);
@@ -219,14 +221,18 @@ const extractAssets = async (t: string, e: ExtractAssetsOptions = { saveFile: tr
   };
 
   const O = async (): Promise<void> => {
-    const { data: e } = await axios.get(u() ? t : `${t}/`, {
+    const urlToFetch = u() ? t : `${t}/`;
+    const response = await fetch(urlToFetch, {
       headers: {
         "User-Agent": "Mozilla/5.0",
         "Accept": "*/*",
-      },
-      responseType: "arraybuffer"
+      }
     });
-    l = e.toString("utf-8");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch HTML: ${response.status} ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    l = Buffer.from(arrayBuffer).toString("utf-8");
     console.log("Fetching content...");
   };
 
