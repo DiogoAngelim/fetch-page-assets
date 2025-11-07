@@ -3,6 +3,77 @@ import extractAssets, {
 } from './index';
 
 describe('extractAssets', () => {
+  it('should download and save a real image asset and update HTML', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const tmp = require('fs').mkdtempSync(require('path').join(os.tmpdir(), 'fetch-assets-test-'));
+    const imageUrl = 'https://www.google.com/images/branding/googlelogo/2x/googlelogo_light_color_92x30dp.png';
+    const sampleHtml = `
+      <html>
+        <body>
+          <img src="${imageUrl}">
+        </body>
+      </html>
+    `;
+
+    const logs = [];
+    const origLog = console.log;
+    const origError = console.error;
+    console.log = (...args) => { logs.push(args.join(' ')); origLog(...args); };
+    console.error = (...args) => { logs.push(args.join(' ')); origError(...args); };
+    let updatedHtml;
+    try {
+      updatedHtml = await extractAssets(sampleHtml, { saveFile: true, verbose: true, basePath: tmp });
+    } finally {
+      console.log = origLog;
+      console.error = origError;
+    }
+
+    if (logs.length) {
+      origLog('[extractAssets test] Captured logs:', logs);
+    }
+
+    const expectedPath = path.join(tmp, 'images/branding/googlelogo/2x/googlelogo_light_color_92x30dp.png');
+    if (!fs.existsSync(expectedPath)) {
+
+      const walk = (dir) => {
+        let results = [];
+        const list = fs.readdirSync(dir);
+        list.forEach((file) => {
+          const filePath = path.join(dir, file);
+          const stat = fs.statSync(filePath);
+          if (stat && stat.isDirectory()) {
+            results = results.concat(walk(filePath));
+          } else {
+            results.push(filePath);
+          }
+        });
+        return results;
+      };
+      const files = walk(path.join(tmp, 'images'));
+      console.log('[extractAssets test] images dir contents:', files);
+    }
+    expect(fs.existsSync(expectedPath)).toBe(true);
+
+    expect(updatedHtml).toContain('images/branding/googlelogo/2x/googlelogo_light_color_92x30dp.png');
+
+    const rimrafSync = (targetPath) => {
+      const fs = require('fs');
+      if (!fs.existsSync(targetPath)) return;
+      const stat = fs.statSync(targetPath);
+      if (stat.isDirectory()) {
+        fs.readdirSync(targetPath).forEach((file) => {
+          rimrafSync(require('path').join(targetPath, file));
+        });
+        fs.rmdirSync(targetPath);
+      } else {
+        fs.unlinkSync(targetPath);
+      }
+    };
+    rimrafSync(path.join(tmp, 'images'));
+
+  });
   it('should be defined', () => {
     expect(extractAssets).toBeDefined();
   });
