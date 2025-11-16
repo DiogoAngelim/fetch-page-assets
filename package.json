@@ -1,12 +1,12 @@
 {
   "name": "fetch-page-assets",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "type": "module",
   "description": "A versatile Node.js module for extracting assets (such as CSS files, JavaScript files, fonts, and images) from HTML content or URLs.",
   "types": "index.ts",
   "main": "index.js",
   "scripts": {
-    "test": "jest",
+    "test": "jest index.test.ts",
     "build": "tsc",
     "clean": "rm -rf dist && rm -rf index.js && rm -rf *.js *.js.map"
   },

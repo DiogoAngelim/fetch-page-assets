@@ -13,7 +13,6 @@ describe('extractAssets', () => {
         </body>
       </html>
     `;
-        
         const logs = [];
         const origLog = console.log;
         const origError = console.error;
@@ -27,14 +26,11 @@ describe('extractAssets', () => {
             console.log = origLog;
             console.error = origError;
         }
-        
         if (logs.length) {
             origLog('[extractAssets test] Captured logs:', logs);
         }
-        
         const expectedPath = path.join(tmp, 'images/branding/googlelogo/2x/googlelogo_light_color_92x30dp.png');
         if (!fs.existsSync(expectedPath)) {
-            
             const walk = (dir) => {
                 let results = [];
                 const list = fs.readdirSync(dir);
@@ -54,9 +50,7 @@ describe('extractAssets', () => {
             console.log('[extractAssets test] images dir contents:', files);
         }
         expect(fs.existsSync(expectedPath)).toBe(true);
-        
         expect(updatedHtml).toContain('images/branding/googlelogo/2x/googlelogo_light_color_92x30dp.png');
-        
         const rimrafSync = (targetPath) => {
             const fs = require('fs');
             if (!fs.existsSync(targetPath))

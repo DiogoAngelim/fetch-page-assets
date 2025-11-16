@@ -5,7 +5,6 @@ import path from "path";
 import beautify from "beautify";
 import { decode } from "html-entities";
 import mime from "mime";
- 
 export const h = (t, i = true) => { if (i)
     console.error(`[Error] ${t}`); };
 export const p = (t, i = true) => { if (i)
@@ -70,7 +69,6 @@ export const D = (t) => {
     if (!isNaN(a))
         console.log(`Download progress: ${a}%`);
 };
- 
 const extractAssets = async (t, e = {}) => {
     let { basePath: s = process.cwd(), source: a = "", protocol: r = "https", maxRetryAttempts: o = 3, retryDelay: n = 1000, verbose: i = true, saveFile: c = true } = e;
     a = a || "";
@@ -127,7 +125,7 @@ const extractAssets = async (t, e = {}) => {
     const P = (t, e) => t[e] || t[e.toLowerCase()];
     const R = (headers, fallback) => {
         let filename = P(headers, "Content-Disposition")?.match(/filename="(.+?)"/)?.[1] || fallback;
-    filename = filename?.split("?")[0].split("#")[0]; 
+        filename = filename?.split("?")[0].split("#")[0];
         filename = filename.replace(/[^a-zA-Z0-9.\-_]/g, "_");
         const contentType = P(headers, "Content-Type");
         const hasExt = filename.includes(".");
@@ -229,7 +227,6 @@ const extractAssets = async (t, e = {}) => {
     };
     const C = async (t) => {
         v(t);
-        
         await (async (t) => {
             const { absoluteAssetUrl: e, fileName: a } = t;
             if (a.endsWith(".css")) {
@@ -244,11 +241,9 @@ const extractAssets = async (t, e = {}) => {
             for (; attempt < o;) {
                 try {
                     await N(url, fileName, async (data) => {
-                        
                         if (!fs.existsSync(dirPath)) {
                             fs.mkdirSync(dirPath, { recursive: true });
                         }
-                        
                         const fullPath = path.join(dirPath, fileName);
                         fs.writeFileSync(fullPath, data);
                         p(`Asset saved successfully to ${fullPath}`);
@@ -276,7 +271,6 @@ const extractAssets = async (t, e = {}) => {
     const k = async (t) => {
         const e = E(t);
         try {
-            
             const urlObj = new URL(e);
             const urlPath = urlObj.pathname.replace(/^\//, "");
             const dirPath = path.join(s, path.dirname(urlPath));
@@ -302,7 +296,6 @@ const extractAssets = async (t, e = {}) => {
         }
     };
     const O = async () => {
-        
     };
     const j = () => {
         if (!b(t))
@@ -346,7 +339,7 @@ const extractAssets = async (t, e = {}) => {
     };
     await G();
     l = l.replace(/srcset="(.*?)"/gi, "").replace(/sizes="(.*?)"/gi, "").replace(new RegExp(t, "g"), "");
-    const regex = /(<link[^>]+rel=["']stylesheet["'][^>]+href=["'])([^"']+\.[^"']+)["']|<(img|script|source)[^>]+src=["']([^"']+\.[^"']+)["']/gi;
+    const regex = /(<link[^>]+rel=["']stylesheet["'][^>]+href=["'])([^"']+\.[^"']+)["']|<(img|script|source)[^>]+src=["']([^"']+\.(?!json)[^"']+)["']/gi;
     const matches = [
         ...[...l.matchAll(regex)].map(m => m[2] || m[4] || ""),
         ...[...l.matchAll(/url\(["']?(.*?)["']?\)/gi)]

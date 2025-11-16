@@ -384,7 +384,7 @@ const extractAssets = async (t: string, e: ExtractAssetsOptions = {}) => {
   await G();
   l = l.replace(/srcset="(.*?)"/gi, "").replace(/sizes="(.*?)"/gi, "").replace(new RegExp(t, "g"), "");
 
-  const regex = /(<link[^>]+rel=["']stylesheet["'][^>]+href=["'])([^"']+\.[^"']+)["']|<(img|script|source)[^>]+src=["']([^"']+\.[^"']+)["']/gi;
+  const regex = /(<link[^>]+rel=["']stylesheet["'][^>]+href=["'])([^"']+\.[^"']+)["']|<(img|script|source)[^>]+src=["']([^"']+\.(?!json)[^"']+)["']/gi;
 
   const matches = [
     ...[...l.matchAll(regex)].map(m => m[2] || m[4] || ""),
