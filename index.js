@@ -143,40 +143,57 @@ const extractAssets = async (t, e = {}) => {
         if (!isNaN(a))
             console.log(`Download progress: ${a}%`);
     };
-    const N = async (url, e, saveFunc) => {
+
+    const N = async (url, fallbackName, saveFunc) => {
         const decodedUrl = decode(url);
+        
+        if (decodedUrl.startsWith("file://")) {
+            try {
+                const localPath = decodedUrl.replace("file://", "");
+
+                console.log("Reading local file:", localPath);
+
+                const data = fs.readFileSync(localPath);
+                const fileName = path.basename(localPath);
+
+                await saveFunc(data, fileName);
+                return data;
+            } catch (err) {
+                console.error("Failed to read local file:", err);
+                throw err;
+            }
+        }
+        // ----------------------------------------------------------------------
+
         console.log("Starting download for:", decodedUrl);
+
         return new Promise((resolve, reject) => {
-            const client = decodedUrl.startsWith('https') ? https : http;
+            const client = decodedUrl.startsWith("https") ? https : http;
+
             client.get(decodedUrl, (res) => {
-                const total = parseInt(res.headers['content-length'] || '0', 10);
+                const total = parseInt(res.headers["content-length"] || "0", 10);
                 let loaded = 0;
                 const chunks = [];
-                res.on('data', (chunk) => {
+
+                res.on("data", (chunk) => {
                     loaded += chunk.length;
                     chunks.push(chunk);
-                    if (total) {
-                        const percent = Math.round((loaded / total) * 100);
-                        if (!isNaN(percent))
-                            console.log(`Download progress: ${percent}%`);
-                    }
                 });
-                res.on('end', async () => {
+
+                res.on("end", async () => {
                     const data = Buffer.concat(chunks);
                     try {
-                        await saveFunc(data, R(res.headers, e));
+                        await saveFunc(data, R(res.headers, fallbackName));
                         resolve(data);
-                    }
-                    catch (err) {
+                    } catch (err) {
                         reject(err);
                     }
                 });
-                res.on('error', (err) => {
-                    console.error("Download or save failed:", err.message || err);
+
+                res.on("error", (err) => {
                     reject(err);
                 });
-            }).on('error', (err) => {
-                console.error("Request failed:", err.message || err);
+            }).on("error", (err) => {
                 reject(err);
             });
         });
